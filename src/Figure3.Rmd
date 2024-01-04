@@ -1,0 +1,342 @@
+---
+title: "Figure 3"
+author: "Huaying Qiu"
+date: "2023-12-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+df_topic <- read_csv('~/Hodgkin_github/data/df_topic_noID.csv')
+
+library(tidyverse)
+library(ComplexHeatmap)
+
+```
+
+
+## Figure 3
+
+### Figure 3A
+
+```{r}
+
+LDA_pop_mean_df <- df_topic %>% 
+  group_by(topic, Annotation) %>% 
+  dplyr::count() %>% 
+  ungroup() %>% 
+  group_by(Annotation) %>% 
+  summarise(pop_mean = mean(n),
+            pop_sd = sd(n))
+
+LDA_mean_df <- df_topic %>% 
+  group_by(topic, Annotation) %>% 
+  dplyr::count() %>% 
+  ungroup()
+
+LDA_mean_df <- LDA_mean_df %>% 
+  mutate(pop_mean = LDA_pop_mean_df$pop_mean[match(LDA_mean_df$Annotation, LDA_pop_mean_df$Annotation)],
+         pop_sd = LDA_pop_mean_df$pop_sd[match(LDA_mean_df$Annotation, LDA_pop_mean_df$Annotation)]) %>% 
+  mutate(z_new = (n - pop_mean)/pop_sd)
+
+LDA_heatmap_df <- LDA_mean_df %>% 
+  dplyr::select(topic, z_new, Annotation) %>% 
+  pivot_wider(names_from = 'topic', values_from = 'z_new')
+
+heatmap_mat <- as.matrix(LDA_heatmap_df[,2:9])
+
+rownames(heatmap_mat) <- LDA_heatmap_df$Annotation
+
+library(circlize)
+col_fun = colorRamp2(c(-1, 0, 1), c('#4575b4', "white", '#d73027'))
+
+bar_vec <- df_topic %>% 
+  group_by(topic) %>% 
+  dplyr::count()
+
+column_ha <- HeatmapAnnotation(count = anno_barplot(bar_vec$n))
+
+Heatmap(heatmap_mat, cluster_rows = FALSE, cluster_columns  = FALSE, col = col_fun, name = 'Z Score', clustering_method_columns = 'complete',
+        row_names_side = 'left', top_annotation = column_ha, column_names_gp = grid::gpar(fontsize = 12),
+  row_names_gp = grid::gpar(fontsize = 12), rect_gp = gpar(col = "black", lwd = 2))
+
+```
+
+
+### Figure 3B
+```{r}
+
+df_topic <- read_csv('~/hodgkinebvmibi/clustering_data/final_df_with_topic_032123.csv')
+
+
+df_topic <- df_topic %>% 
+  mutate(ebv_status = hodgkin_annotated$ebv_status[match(df_topic$patientID, hodgkin_annotated$patientID)])
+
+
+p <- df_topic %>% 
+  filter(ebv_status != 'control') %>% 
+  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative'))) %>% 
+  group_by(pointNum, topic, ebv_status) %>% 
+  dplyr::count() %>% 
+  ungroup() %>% 
+  group_by(pointNum) %>% 
+  mutate(total_n = sum(n)) %>% 
+  group_by(pointNum, topic) %>% 
+  mutate(prop = n/total_n) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = as.factor(pointNum), y = prop, color = topic)) + 
+  geom_point(aes(alpha = prop)) + 
+  geom_segment(aes(x = as.factor(pointNum), xend = as.factor(pointNum), y = 0, yend = prop, color = topic)) + 
+  coord_flip() + 
+  facet_grid(vars(ebv_status), vars(topic), scales = 'free_y') + 
+  theme_bw() + 
+  scale_color_brewer(palette = 'Set2') + 
+  theme(panel.grid.major.y = element_blank(),
+        legend.position = 'bottom')
+
+
+p <- df_topic %>% 
+  filter(ebv_status != 'control') %>% 
+  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative'))) %>% 
+  group_by(pointNum, topic, ebv_status) %>% 
+  dplyr::count() %>% 
+  ungroup() %>% 
+  group_by(pointNum) %>% 
+  mutate(total_n = sum(n)) %>% 
+  group_by(pointNum, topic) %>% 
+  mutate(prop = n/total_n) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = as.factor(pointNum), y = topic, color = topic)) + 
+  geom_point(aes(size = prop), alpha = 1) + 
+  #geom_segment(aes(x = as.factor(pointNum), xend = as.factor(pointNum), y = 0, yend = prop, color = topic)) + 
+  facet_wrap(~ebv_status, scales = 'free_x') +
+  theme_bw() + 
+  scale_color_brewer(palette = 'Set2') + 
+  scale_size_continuous(range = c(0,10)) + 
+  theme(panel.grid.major.y = element_blank(),
+        legend.position = 'bottom')
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure3b_2.pdf', p, width = 15, height = 5, unit = 'in')
+
+View(df_topic %>% 
+  filter(ebv_status != 'control') %>% 
+  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative'))) %>% 
+  group_by(pointNum, topic, ebv_status) %>% 
+  dplyr::count() %>% 
+  ungroup() %>% 
+  group_by(pointNum) %>% 
+  mutate(total_n = sum(n)) %>% 
+  group_by(pointNum, topic) %>% 
+  mutate(prop = n/total_n) %>% 
+  filter(topic %in% c('Topic-0', 'Topic-1')))
+
+
+df_topic %>% 
+  filter(ebv_status != 'control') %>% 
+  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative'))) %>% 
+  group_by(pointNum, topic, ebv_status) %>% 
+  dplyr::count() %>% 
+  ungroup() %>% 
+  group_by(pointNum) %>% 
+  mutate(total_n = sum(n)) %>% 
+  group_by(pointNum, topic) %>% 
+  mutate(prop = n/total_n) %>% 
+  group_by(pointNum, ebv_status) %>% 
+  mutate(order_vec = n[topic == 'Topic-0']/sum(n)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = reorder(as.factor(pointNum), order_vec), y = prop, fill = topic)) + 
+  geom_col(position = 'dodge') + 
+  facet_wrap(~ebv_status, scale = 'free_x') + 
+  theme_bw() + 
+  scale_fill_brewer(palette = 'Set2') + 
+  theme(panel.grid.major.x = element_blank())
+
+```
+
+
+### Figure 3C
+
+```{r}
+
+p <- df_topic %>% 
+  mutate(ebv_status = factor(ebv_status, levels = c('Negative', 'Positive'))) %>% 
+  #mutate(topic = factor(topic, levels = c('topic-0', 'topic-1', 'topic-2', 'topic-3', 'topic-4', 'topic-5', 'topic-6', 'topic-7'))) %>% 
+  group_by(topic, ebv_status) %>% 
+  dplyr::count() %>% 
+  dplyr::filter(ebv_status != 'control') %>% 
+  ungroup() %>% 
+  group_by(ebv_status) %>% 
+  mutate(total_n = sum(n)) %>% 
+  ungroup() %>% 
+  group_by(topic) %>% 
+  mutate(diff = log2((n/total_n) / (lag(n)/lag(total_n)))) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = reorder(topic, diff), y = diff, fill = topic)) +
+  geom_col() + 
+  geom_rect(aes(xmin = 0, ymin = 0, xmax = Inf, ymax = Inf), fill = '#D55E00', alpha = 0.02) + 
+  geom_rect(aes(xmin = 0, ymin = -Inf, xmax = Inf, ymax = 0), fill = '#009E73', alpha = 0.02) + 
+  #annotate('text', x = 1, y = 1.5, label = 'EBV+', size = 12) +
+  #annotate('text', x = 7, y = -6, label = 'EBV-', size = 12) +
+  labs(x = 'Neighborhood', y = 'Log2 Fold Enrichment', title = 'Neighborhood Enrichment (EBV+/EBV-)') + 
+  scale_fill_manual('Neighborhood', values = c('Topic-0' = '#66C2A5', 'Topic-1' = '#FC8D62', 'Topic-2' = '#8DA0CB', 'Topic-3' = '#E78AC3', 'Topic-4' = '#A6D854', 'Topic-5' = '#FFD92F',
+                                               'Topic-6' = '#E5C494', 'Topic-7' = '#B3B3B3'), na.value = 'white', na.translate = TRUE) +
+  #scale_fill_brewer(palette = 'Set2') +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+        legend.position = 'right',
+        text = element_text(size = 12))
+
+ggsave('/mnt/nfs/home/huayingqiu/hodgkinebvmibi/paper_figures/figure3/log2fold.pdf', p, dpi = 320)
+
+```
+
+
+
+### Figure 3D
+```{r}
+
+
+# df_topic %>% 
+#   filter(topic %in% c('Topic-0', 'Topic-1', 'Topic-6')) %>% 
+#   group_by(pointNum, topic, Annotation, ebv_status) %>% 
+#   count() %>% 
+#   group_by(pointNum, topic) %>% 
+#   mutate(total_n = sum(n)) %>% 
+#   group_by(pointNum, topic, Annotation) %>% 
+#   mutate(prop = n/total_n) %>% 
+#   filter(Annotation %in% c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg', 'M1', 'M2', 'Dc', 'Tumor')) %>% 
+#   ggplot(aes(x = interaction(ebv_status, topic), y = prop)) + 
+#   # geom_rect(xmin= 0, xmax=3.5, ymin=-Inf, ymax=Inf, 
+#   #           fill="#D55E00", alpha = 0.01) +
+#   # geom_rect(xmin= 3.5, xmax=Inf, ymin=-Inf, ymax=Inf, 
+#   #           fill="#009E73", alpha = 0.01) +
+#   geom_boxplot(aes(fill = interaction(ebv_status, topic)), outlier.alpha = 0) +
+#   geom_jitter(alpha = 0.3, position = position_jitter(0.1)) + 
+#   facet_wrap(~Annotation, scales = 'free_y') + 
+#   scale_fill_manual(values = c('Positive.Topic-0' = '#D55E00', 'Positive.Topic-1' = '#D55E00', 'Positive.Topic-6' = '#D55E00',
+#                                'Negative.Topic-0' = '#009E73', 'Negative.Topic-1' = '#009E73', 'Negative.Topic-6' = '#009E73')) + 
+#   stat_compare_means(comparisons = list(c('Positive.Topic-0', 'Negative.Topic-0'),
+#                                          c('Positive.Topic-1', 'Negative.Topic-1'),
+#                                          c('Positive.Topic-6', 'Negative.Topic-6')), label = 'p.signif') + 
+#   #scale_color_manual(values = c('Positive' = '#D55E00', 'Negative' = '#009E73')) + 
+#   theme_bw()
+  
+for (i in unique(df_topic$Annotation)){
+  p <- df_topic %>% 
+  filter(topic %in% c('Topic-0', 'Topic-1')) %>% 
+  group_by(pointNum, topic, Annotation, ebv_status) %>% 
+  count() %>% 
+  group_by(pointNum, topic) %>% 
+  mutate(total_n = sum(n)) %>% 
+  group_by(pointNum, topic, Annotation) %>% 
+  mutate(prop = n/total_n) %>% 
+  filter(Annotation == i) %>% 
+  ggplot(aes(x = interaction(ebv_status, topic), y = prop)) + 
+  # geom_rect(xmin= 0, xmax=3.5, ymin=-Inf, ymax=Inf, 
+  #           fill="#D55E00", alpha = 0.01) +
+  # geom_rect(xmin= 3.5, xmax=Inf, ymin=-Inf, ymax=Inf, 
+  #           fill="#009E73", alpha = 0.01) +
+  geom_boxplot(aes(fill = interaction(ebv_status, topic)), outlier.alpha = 0) +
+  geom_jitter(alpha = 0.3, position = position_jitter(0.1)) + 
+  scale_fill_manual(values = c('Positive.Topic-0' = '#D55E00', 'Positive.Topic-1' = '#D55E00', 'Positive.Topic-6' = '#D55E00',
+                               'Negative.Topic-0' = '#009E73', 'Negative.Topic-1' = '#009E73', 'Negative.Topic-6' = '#009E73')) + 
+  stat_compare_means(comparisons = list(c('Positive.Topic-0', 'Negative.Topic-0'),
+                                         c('Positive.Topic-1', 'Negative.Topic-1')), label = 'p.signif') + 
+  #scale_color_manual(values = c('Positive' = '#D55E00', 'Negative' = '#009E73')) + 
+  theme_bw() + 
+  labs(title = i) + 
+  theme(legend.position = 'none',
+        axis.text.x = element_text(angle = 90))
+  
+  ggsave(paste0('~/hodgkinebvmibi/paper_figures/celltype_topic_compare_102423/', i, '.pdf'), p, width = 6, height = 6, units = 'in')
+}
+
+```
+
+### Figure 3E
+
+
+
+```{r}
+
+CN_core_level <- df_topic %>% 
+  dplyr::select(pointNum, ebv_status, Annotation, `B2-Microglobulin`, HLA1, `HLA-DR`, CD45RO, Tox, Lag3, `PD-1`, `PD-L1`, topic) %>% 
+  pivot_longer(cols = -c(pointNum, ebv_status, Annotation, topic), names_to = 'marker', values_to = 'value') %>% 
+  group_by(pointNum, ebv_status, Annotation, marker, topic) %>% 
+  summarise(mu = mean(value)) %>% 
+  pivot_wider(names_from = 'marker', values_from = 'mu')
+
+CN_core_level %>% 
+  filter(topic %in% c('Topic-0', 'Topic-1')) %>%
+  ggplot(aes(x = topic, y = `B2-Microglobulin`, fill = topic)) + 
+  geom_boxplot() + 
+  facet_wrap(~ebv_status + Annotation)
+
+CN_core_level %>% 
+  filter(topic %in% c('Topic-0', 'Topic-1')) %>% 
+  filter(Annotation == 'CD4') %>%
+  filter(ebv_status == 'Negative')
+
+
+marker_heatmap(core_level, hodgkin_annotated, 'pointNum', 'Annotation', 
+               group1_col = 'ebv_status', group1_level = c('Positive', 'Negative'), group1_color = c('Positive' = '#D55E00', 
+                                                                                                     'Negative' = '#009E73'),
+               'EBV Status', marker_vec = c('CD45RO', 'Tox', 'Lag3', 'PD-1'), celltype_vec = c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg'),
+               celltype_color_vec = celltype_color[c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg')], heatmap_title = 'Exhaustion', log10_count = FALSE, draw_heatmap = FALSE)
+
+
+
+
+df_topic %>%
+      filter(Annotation %in% c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg')) %>% 
+      group_by(Annotation, ebv_status, topic) %>% 
+      dplyr::count() %>% 
+      mutate(log_n = log10(n)) %>% 
+      arrange(ebv_status)
+
+```
+
+
+
+
+```{r}
+
+pdf('~/hodgkinebvmibi/paper_figures/figure3/figure3e/T_cells.pdf')
+
+h1 <- marker_heatmap(CN_core_level, count_df = df_topic, 'pointNum', 'Annotation', 'ebv_status', c('Positive', 'Negative'), c('Positive' = '#D55E00', 'Negative' = '#009E73'), 'EBV Status', topic_col = 'topic', topic_num = 'Topic-0', marker_vec = c('B2-Microglobulin', 'HLA1', 'CD45RO', 'Tox', 'Lag3', 'PD-1'), celltype_vec = c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg'), celltype_color_vec = c('CD4' = '#4DAF4A', 'CD8' = '#984EA3', 'Cytotoxic CD4' = '#253d24', 'Cytotoxic CD8' = '#FF7F00', 'Treg' = '#BEBADA'), heatmap_title = 'CN0', log10_count = TRUE, draw_heatmap = FALSE, z_low = -1, z_high = 1)
+
+
+h2 <- marker_heatmap(CN_core_level, df_topic, 'pointNum', 'Annotation', 'ebv_status', c('Positive', 'Negative'), c('Positive' = '#D55E00', 'Negative' = '#009E73'), 'EBV Status', topic_col = 'topic', topic_num = 'Topic-1', marker_vec = c('B2-Microglobulin', 'HLA1', 'CD45RO', 'Tox', 'Lag3', 'PD-1'), celltype_vec = c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg'), celltype_color_vec = c('CD4' = '#4DAF4A', 'CD8' = '#984EA3', 'Cytotoxic CD4' = '#253d24', 'Cytotoxic CD8' = '#FF7F00', 'Treg' = '#BEBADA'), heatmap_title = 'CN1', log10_count = TRUE, draw_heatmap = FALSE, z_low = -1, z_high = 1)
+
+
+heatmap_list <- h1+h2
+
+draw(heatmap_list, ht_gap = unit(1, 'cm'))
+
+dev.off()
+
+```
+
+
+
+```{r}
+
+pdf('~/hodgkinebvmibi/paper_figures/figure3/figure3e/Other_cells.pdf')
+
+h3 <- marker_heatmap(CN_core_level, df_topic, 'pointNum', 'Annotation', 'ebv_status', c('Positive', 'Negative'), c('Positive' = '#D55E00', 'Negative' = '#009E73'), 'EBV Status', topic_col = 'topic', topic_num = 'Topic-0', marker_vec = c('B2-Microglobulin', 'HLA1', 'HLA-DR', 'PD-L1'), celltype_vec = c('DC', 'M1', 'M2', 'Tumor'), celltype_color_vec = c('DC' = '#377EB8', 'M2' = '#f7c173', 'M1' = '#00FFFF', 'Tumor' = '#E41A1C'), heatmap_title = 'CN0', log10_count = TRUE, draw_heatmap = FALSE, z_low = -1, z_high = 1)
+
+h4 <- marker_heatmap(CN_core_level, df_topic, 'pointNum', 'Annotation', 'ebv_status', c('Positive', 'Negative'), c('Positive' = '#D55E00', 'Negative' = '#009E73'), 'EBV Status', topic_col = 'topic', topic_num = 'Topic-1', marker_vec = c('B2-Microglobulin', 'HLA1', 'HLA-DR', 'PD-L1'), celltype_vec = c('DC', 'M1', 'M2', 'Tumor'), celltype_color_vec = c('DC' = '#377EB8', 'M2' = '#f7c173', 'M1' = '#00FFFF', 'Tumor' = '#E41A1C'), heatmap_title = 'CN1', log10_count = TRUE, draw_heatmap = FALSE, z_low = -1, z_high = 1)
+
+heatmap_list <- h3+h4
+
+draw(heatmap_list, ht_gap = unit(1, 'cm'))
+
+dev.off()
+
+
+```

@@ -1,0 +1,746 @@
+---
+title: "Figure 2"
+author: "Huaying Qiu"
+date: "2023-12-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+library(tidyverse)
+library(ComplexHeatmap)
+
+```
+
+
+```{r}
+
+celltype_color <- c('Tumor' = '#E41A1C', 'DC' = '#377EB8', 'B' = '#F781BF', 'CD4' = '#4DAF4A', 'CD8' = '#984EA3',
+                    'M2' = '#F7C173', 'NK' = '#FFFF33', 'Endothelial' = '#A65628', 'M1' = '#00FFFF', 'Neutrophil' = '#F6CEC1',
+                    'Treg' = '#BEBADA', 'Cytotoxic CD4' = '#253D24', 'Cytotoxic CD8' = '#FF7F00')
+
+celltype_color[sort(names(celltype_color))]
+
+
+hodgkin_annotated <- read_csv('~/Hodgkin_github/data/hodgkin_DFCI_noID.csv')
+
+hodgkin_annotated <- hodgkin_annotated %>% 
+  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative')))
+
+```
+
+## Figure 2
+
+### Figure 2A
+
+```{r}
+
+# Get list of markers
+
+markers <- c('CD11c', 'CD14', 'CD15', 'CD153 (CD30L)', 'CD16', 'CD163', 'CD20', 'CD3', 'CD30', 'CD4', 'CD56', 'CD57', 'CD68', 'CD8', 'FoxP3', 'GATA3', 'Granzyme B', 'Pax-5')
+
+hodgkin_heatmap_df <- hodgkin_annotated %>% 
+  dplyr::filter(ebv_status != 'control') %>% 
+  dplyr::select(Annotation, all_of(markers))
+
+mean_df <- hodgkin_heatmap_df %>% 
+  pivot_longer(cols = -Annotation, names_to = 'marker', values_to = 'value') %>% 
+  group_by(marker, Annotation) %>% 
+  summarise(mu = mean(value))
+
+
+pop_mean_df <- hodgkin_heatmap_df %>% 
+  pivot_longer(cols = -Annotation, names_to = 'marker') %>% 
+  group_by(marker) %>% 
+  summarise(pop_mean = mean(value),
+            pop_sd = sd(value))
+
+mean_df <- mean_df %>% 
+  ungroup() %>% 
+  mutate(pop_mean = pop_mean_df$pop_mean[match(mean_df$marker, pop_mean_df$marker)],
+         pop_sd = pop_mean_df$pop_sd[match(mean_df$marker, pop_mean_df$marker)]) %>% 
+  mutate(z_new = (mu - pop_mean)/pop_sd)
+
+heatmap_df <- mean_df %>% 
+  dplyr::select(marker, z_new, Annotation) %>% 
+  pivot_wider(names_from = 'marker', values_from = 'z_new')
+
+heatmap_mat <- t(as.matrix(heatmap_df[,2:19]))
+
+colnames(heatmap_mat) <- heatmap_df$Annotation
+
+library(circlize)
+col_fun = colorRamp2(c(-1, 0, 1), c('#4575b4', "white", '#d73027'))
+
+bar_vec <- hodgkin_annotated %>% 
+  group_by(Annotation) %>% 
+  dplyr::count() %>% 
+  mutate(log_n = log10(n))
+
+column_ha <- HeatmapAnnotation(count = anno_barplot(bar_vec$n, border = FALSE, bar_width = 0.9,
+                                                    gp = gpar(col = 'black', fill = rep(celltype_color[sort(names(celltype_color))], 2)),
+                                                    height = unit(3, 'cm')),
+                               show_annotation_name = FALSE)
+
+column_ha2 <- HeatmapAnnotation(celltype = sort(names(celltype_color)),
+                                col = list(celltype = celltype_color), show_annotation_name = FALSE,
+                                gp = gpar(col = 'black', lwd = 2),
+                                annotation_legend_param = list(title = 'Cell Type'))
+
+fig2_h1 <- Heatmap(heatmap_mat, cluster_rows = FALSE, cluster_columns  = FALSE, col = col_fun, clustering_method_columns = 'complete',
+        row_names_side = 'left', top_annotation = column_ha, column_names_gp = grid::gpar(fontsize = 12),
+  row_names_gp = grid::gpar(fontsize = 12), rect_gp = gpar(col = "black", lwd = 2), show_column_names = FALSE, name = 'Z Score',
+  heatmap_legend_param = list(border = 'black'))
+
+
+
+
+
+
+```
+
+
+
+
+```{r}
+
+markers <- c('B2-Microglobulin', 'CD45RA', 'CD45RO', 'CXCR5', 'HLA-DR', 'HLA1', 'Ki-67', 'Lag3', 'PD-1', 'PD-L1','Tox')
+
+hodgkin_heatmap_df <- hodgkin_annotated %>% 
+  dplyr::select(Annotation, all_of(markers))
+
+mean_df <- hodgkin_heatmap_df %>% 
+  pivot_longer(cols = -Annotation, names_to = 'marker', values_to = 'value') %>% 
+  group_by(marker, Annotation) %>% 
+  summarise(mu = mean(value))
+
+
+pop_mean_df <- hodgkin_heatmap_df %>% 
+  pivot_longer(cols = -Annotation, names_to = 'marker') %>% 
+  group_by(marker) %>% 
+  summarise(pop_mean = mean(value),
+            pop_sd = sd(value))
+
+mean_df <- mean_df %>% 
+  ungroup() %>% 
+  mutate(pop_mean = pop_mean_df$pop_mean[match(mean_df$marker, pop_mean_df$marker)],
+         pop_sd = pop_mean_df$pop_sd[match(mean_df$marker, pop_mean_df$marker)]) %>% 
+  mutate(z_new = (mu - pop_mean)/pop_sd)
+
+heatmap_df <- mean_df %>% 
+  dplyr::select(marker, z_new, Annotation) %>% 
+  pivot_wider(names_from = 'marker', values_from = 'z_new')
+
+heatmap_mat <- t(as.matrix(heatmap_df[,2:12]))
+
+colnames(heatmap_mat) <- heatmap_df$Annotation
+
+library(circlize)
+col_fun = colorRamp2(c(-1, 0, 1), c('#4575b4', "white", '#d73027'))
+
+bar_vec <- hodgkin_annotated %>% 
+  group_by(Annotation) %>% 
+  dplyr::count()
+
+column_ha <- HeatmapAnnotation(count = anno_barplot(bar_vec$n))
+
+column_ha2 <- HeatmapAnnotation(celltype = sort(names(celltype_color)),
+                                col = list(celltype = celltype_color), show_annotation_name = FALSE,
+                                gp = gpar(col = 'black', lwd = 2),
+                                annotation_legend_param = list(title = 'Cell Type'))
+
+fig2_h2 <- Heatmap(heatmap_mat, cluster_rows = FALSE, cluster_columns  = FALSE, col = col_fun, clustering_method_columns = 'complete',
+        row_names_side = 'left', column_names_gp = grid::gpar(fontsize = 12),
+  row_names_gp = grid::gpar(fontsize = 12), rect_gp = gpar(col = "black", lwd = 2),
+  bottom_annotation = column_ha2, name = 'Z Score', heatmap_legend_param = list(border = 'black'))
+
+```
+
+
+```{r}
+
+pdf('~/hodgkinebvmibi/paper_figures/figure2/figure2A.pdf', width = 10, height = 15)
+
+fig2_heatmap_list <- fig2_h1 %v% fig2_h2
+
+draw(fig2_heatmap_list, ht_gap = unit(0.1, 'cm'))
+
+dev.off()
+
+```
+
+
+
+```{r}
+
+library(raster)
+
+seg_list <- list.files('~/hodgkinebvmibi/20220823_cHL-DFCI_Production_M060/', full.names = TRUE, recursive = TRUE, pattern = 'segmentationMap.tif')
+
+# Exchange position of masks of the two LN
+
+seg_list <- replace(seg_list, c(31,32), seg_list[c(32,31)])
+
+# Read in segmentation mask
+
+mask_list <- map(seg_list, function(x){
+  as.matrix(raster(x))
+})
+
+# outline_list <- list.files('~/hodgkinebvmibi/20220823_cHL-DFCI_Production_M060/', full.names = TRUE, recursive = TRUE, pattern = 'segmentationMask_boundary.tif')
+# 
+# outline_list <- replace(outline_list, c(31,32), outline_list[c(32,31)])
+# 
+# outline <- map(outline_list, function(x){
+#   as.matrix(raster(x))
+# })
+
+
+```
+
+
+```{r}
+
+new_annotation <- hodgkin_annotated %>% 
+  dplyr::filter(is.na(fov)) %>% 
+  dplyr::select(pointNum, patientID, region, Annotation, cellLabel)
+
+pointNum_ID_region_LUT <- new_annotation %>% 
+  group_by(pointNum, patientID, region) %>% 
+  dplyr::count() %>% 
+  dplyr::select(-n)
+
+celltype_plot <- function(point_num, seg_list, annotation, cell_label, mypalette, pointNumLUT, verbose = FALSE, out = FALSE, out_path = NULL, print_fig = FALSE){
+  require(reshape2)
+  require(purrr)
+  require(ggplot2)
+  require(dplyr)
+  require(tidyr)
+  # Get segmentation matrix
+  seg_mat <- seg_list[[point_num - 2]]
+  # Get segmentation outline
+  #seg_outline <- outline[[point_num - 2]]
+  # Get cell types for this point. Stored as a list
+  cell_type <- as.list(unique(annotation))
+  # Store cell label of each cell type in a list
+  type_label_LUT <- map(cell_type, function(x){
+    cell_label[annotation == x]
+  })
+  # Name list by cell type
+  names(type_label_LUT) <- unique(annotation)
+  # Reshape segmentation matrix and add a column called pixel type
+  mat_long <- melt(seg_mat)
+  mat_long <- mat_long %>% 
+    mutate(pixel_type = rep(NA, nrow(mat_long)))
+  # outline_long <- melt(seg_outline)
+  # outline_long <- outline_long %>%
+  # mutate(pixel = ifelse(value == 1, 'outline', NA))
+  # Fill in pixel type by cell type
+  for (i in 1:length(unique(annotation))){
+    mat_long$pixel_type[mat_long$value %in% type_label_LUT[[i]]] <- unique(annotation)[i]
+  }
+  # Match cell type and color to make sure color is uniform across the board
+  color <- mypalette$color[match(unique(annotation), mypalette$celltype)]
+  # Match pointNum, patientID, and region
+  plot_title <- paste0(pointNumLUT$patientID[pointNumLUT$pointNum == point_num], '_', pointNumLUT$region[pointNumLUT$pointNum == point_num])
+  # Plot 
+  p <- ggplot()+
+    #geom_tile(data = outline_long, aes(x = Var2, y = -Var1, fill = as.factor(pixel))) + 
+    #scale_fill_manual(values = c('#FFFFFF'), na.value = 'white', na.translate = FALSE) + 
+    geom_raster(data = mat_long, aes(x = Var2, y = -Var1, fill = pixel_type)) + 
+    scale_fill_manual('Cell Types', breaks = unique(annotation), values = color, na.value = 'white', drop = FALSE) +
+    #scale_fill_brewer(palette = 'Set3', direction = -1, na.value = 'white', breaks = unique(annotation)) + 
+    #labs(title = paste0(plot_title), fill = 'Cell Types') + 
+    theme(axis.title = element_blank(),
+          axis.ticks = element_blank(),
+          axis.line = element_blank(),
+          axis.text = element_blank(),
+          panel.background = element_blank(),
+          panel.grid = element_blank(),
+          legend.position = 'none')
+  # Show plot
+  if (verbose){
+    cat('Plot for PointNum ', point_num, ' completed. \n')
+  }
+  if (out){
+    ggsave(filename = paste0(out_path, plot_title, '.png'), plot = p, device = 'png', height = 9, width = 9, units = 'in', dpi = 320)
+    #legend_plot <- cowplot::get_legend(p)
+    #ggsave(filename = paste0(out_path, 'legend.pdf'), plot = legend_plot, device = 'pdf', dpi = 320)
+  }
+  if (print_fig){
+    print(p)
+  }
+}
+
+```
+
+```{r}
+
+library(foreach)
+
+mypalette <- data.frame(celltype = c('Tumor', 'Other', 'DC', 'B', 'CD4', 'CD8', 'M2', 'NK', 'Endothelial', 'M1', 'Neutrophil', 'Treg', 'Cytotoxic CD4', 'Cytotoxic CD8'),
+                        color = c('#E41A1C', '#999999', '#377EB8', '#F781BF', '#4DAF4A', '#984EA3', '#f7c173', '#FFFF33', '#A65628', '#00FFFF', '#f6cec1', '#BEBADA', '#253d24', '#FF7F00'))
+
+cl <- parallel::makeCluster(20)
+doParallel::registerDoParallel(cl)
+
+foreach (i = unique(new_annotation$pointNum)) %dopar% {
+  celltype_plot(i, mask_list, new_annotation$Annotation[new_annotation$pointNum == i], new_annotation$cellLabel[new_annotation$pointNum == i], mypalette = mypalette, pointNumLUT = pointNum_ID_region_LUT, verbose = TRUE, out = TRUE, out_path = '~/hodgkinebvmibi/paper_figures/pheno_map_no_legend/')
+}
+
+parallel::stopCluster(cl)
+
+```
+
+## SingleFOV phenotype Map
+
+
+```{r}
+
+library(raster)
+
+seg_list <- list.files('~/hodgkinebvmibi/20220823_cHL-DFCI_Production_singleFOV_M060/', full.names = TRUE, recursive = TRUE, pattern = 'segmentationMap.tif')
+
+# Read in segmentation mask
+
+mask_list <- map(seg_list, function(x){
+  as.matrix(raster(x))
+})
+
+```
+
+
+```{r}
+
+new_annotation <- hodgkin_annotation_with_marker %>% 
+  dplyr::filter(!is.na(fov)) %>% 
+  dplyr::select(pointNum, patientID, fov, Annotation, cellLabel)
+
+pointNum_ID_fov_LUT <- new_annotation %>% 
+  group_by(pointNum, patientID, fov) %>% 
+  dplyr::count() %>% 
+  dplyr::select(-n)
+
+celltype_plot <- function(point_num, seg_list, annotation, cell_label, mypalette, pointNumLUT, verbose = FALSE, out = FALSE, out_path = NULL, print_fig = FALSE){
+  require(reshape2)
+  require(purrr)
+  require(ggplot2)
+  require(dplyr)
+  require(tidyr)
+  # Get segmentation matrix
+  seg_mat <- seg_list[[point_num - 34]]
+  # Get cell types for this point. Stored as a list
+  cell_type <- as.list(unique(annotation))
+  # Store cell label of each cell type in a list
+  type_label_LUT <- map(cell_type, function(x){
+    cell_label[annotation == x]
+  })
+  # Name list by cell type
+  names(type_label_LUT) <- unique(annotation)
+  # Reshape segmentation matrix and add a column called pixel type
+  mat_long <- melt(seg_mat)
+  mat_long <- mat_long %>% 
+    mutate(pixel_type = rep(NA, nrow(mat_long)))
+  # Fill in pixel type by cell type
+  for (i in 1:length(unique(annotation))){
+    mat_long$pixel_type[mat_long$value %in% type_label_LUT[[i]]] <- unique(annotation)[i]
+  }
+  # Match cell type and color to make sure color is uniform across the board
+  color <- mypalette$color[match(unique(annotation), mypalette$celltype)]
+  # Match pointNum, patientID, and region
+  plot_title <- paste0(pointNumLUT$patientID[pointNumLUT$pointNum == point_num], '_', pointNumLUT$fov[pointNumLUT$pointNum == point_num])
+  # Plot 
+  p <- ggplot()+
+    geom_raster(data = mat_long, aes(x = Var2, y = -Var1, fill = pixel_type)) + 
+    scale_fill_manual('Cell Types', breaks = unique(annotation), values = color, na.value = 'white', drop = FALSE) +
+    #scale_fill_brewer(palette = 'Set3', direction = -1, na.value = 'white', breaks = unique(annotation)) + 
+    #labs(title = paste0(plot_title), fill = 'Cell Types') + 
+    theme(axis.title = element_blank(),
+          axis.ticks = element_blank(),
+          axis.line = element_blank(),
+          axis.text = element_blank(),
+          panel.background = element_blank(),
+          panel.grid = element_blank(),
+          legend.position = 'none')
+  # Show plot
+  if (verbose){
+    cat('Plot for PointNum ', point_num, ' completed. \n')
+  }
+  if (out){
+    ggsave(filename = paste0(out_path, plot_title, '.png'), plot = p, device = 'png', height = 9, width = 9, units = 'in', dpi = 320)
+    #legend_plot <- cowplot::get_legend(p)
+    #ggsave(filename = paste0(out_path, 'legend.pdf'), plot = legend_plot, device = 'pdf', dpi = 320)
+  }
+  if (print_fig){
+    print(p)
+  }
+}
+
+```
+
+```{r}
+
+library(foreach)
+
+mypalette <- data.frame(celltype = c('Tumor', 'Other', 'DC', 'B', 'CD4', 'CD8', 'M2', 'NK', 'Endothelial', 'M1', 'Neutrophil', 'Treg', 'Cytotoxic CD4', 'Cytotoxic CD8'),
+                        color = c('#E41A1C', '#999999', '#377EB8', '#F781BF', '#4DAF4A', '#984EA3', '#f7c173', '#FFFF33', '#A65628', '#00FFFF', '#f6cec1', '#BEBADA', '#253d24', '#FF7F00'))
+
+cl <- parallel::makeCluster(8)
+doParallel::registerDoParallel(cl)
+
+foreach (i = unique(new_annotation$pointNum)) %dopar% {
+  celltype_plot(i, mask_list, new_annotation$Annotation[new_annotation$pointNum == i], new_annotation$cellLabel[new_annotation$pointNum == i], mypalette = mypalette, pointNumLUT = pointNum_ID_fov_LUT, verbose = TRUE, out = TRUE, out_path = '~/hodgkinebvmibi/paper_figures/singleFOV_pheno/')
+}
+
+parallel::stopCluster(cl)
+
+```
+
+
+
+### Figure 2B
+
+```{r}
+
+library(tidytext)
+
+p <- hodgkin_annotated %>% 
+  filter(ebv_status != 'control') %>% 
+  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative'))) %>% 
+  group_by(pointNum, Annotation, ebv_status) %>% 
+  dplyr::count() %>%
+  ungroup() %>% 
+  group_by(pointNum, ebv_status) %>% 
+  mutate(order_vec = ifelse(ebv_status == 'Positive', n[Annotation == 'CD8']/sum(n), n[Annotation == 'CD4']/sum(n))) %>% 
+  mutate(Annotation = reorder_within(Annotation, -n, ebv_status)) %>% 
+  ggplot(aes(x = reorder(as.factor(pointNum), -order_vec), y = n, fill = Annotation)) + 
+  geom_col(position = 'fill') + 
+  facet_grid(~ebv_status, scales = 'free_x', space = 'free') + 
+  scale_fill_manual('Cell Types', values = c('Tumor___Positive' = '#E41A1C', 'Tumor___Negative' = '#E41A1C', 'DC___Positive' = '#377EB8', 'DC___Negative' = '#377EB8', 
+                                             'B___Positive' = '#F781BF', 'B___Negative' = '#F781BF', 'CD4___Positive' = '#4DAF4A', 'CD4___Negative' = '#4DAF4A', 'CD8___Positive' = '#984EA3', 
+                                             'CD8___Negative' = '#984EA3', 'M2___Positive' = '#f7c173', 'M2___Negative' = '#f7c173', 'NK___Positive' = '#FFFF33', 
+                                             'NK___Negative' = '#FFFF33', 'Endothelial___Positive' = '#A65628', 
+                                             'Endothelial___Negative' = '#A65628', 'M1___Positive' = '#00FFFF', 
+                                             'M1___Negative' = '#00FFFF',
+           'Neutrophil___Positive' = '#f6cec1', 'Neutrophil___Negative' = '#f6cec1', 'Treg___Positive' = '#BEBADA', 
+           'Treg___Negative' = '#BEBADA', 'Cytotoxic CD4___Positive' = '#253d24', 
+           'Cytotoxic CD4___Negative' = '#253d24', 'Cytotoxic CD8___Positive' = '#FF7F00', 'Cytotoxic CD8___Negative' = '#FF7F00'), na.value = 'white') + 
+  theme_bw() + 
+  theme(text = element_text(size = 15),
+        legend.position = 'none',
+        axis.text.x = element_text(angle = 90)) + 
+  labs(x = 'FOV', y = 'Proportion')
+
+ggsave('/mnt/nfs/home/huayingqiu/hodgkinebvmibi/paper_figures/cell_composition_combined_perFOV.pdf',p,dpi = 320)
+
+```
+
+
+
+### Figure 2C
+
+
+```{r}
+
+celltype_log2c <- hodgkin_annotated %>% 
+  group_by(Annotation, ebv_status) %>% 
+  dplyr::count() %>% 
+  dplyr::filter(ebv_status != 'control') %>% 
+  ungroup() %>% 
+  group_by(ebv_status) %>% 
+  mutate(total_n = sum(n)) %>% 
+  ungroup() %>% 
+  group_by(Annotation) %>% 
+  mutate(diff = log2((lag(n)/lag(total_n)) / (n/total_n))) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = reorder(Annotation, diff), y = diff, fill = Annotation)) +
+  geom_col() + 
+  geom_rect(aes(xmin = 0, ymin = 0, xmax = Inf, ymax = Inf), fill = '#D55E00', alpha = 0.02) + 
+  geom_rect(aes(xmin = 0, ymin = -Inf, xmax = Inf, ymax = 0), fill = '#009E73', alpha = 0.02) + 
+  #annotate('text', x = 2, y = 1.5, label = 'EBV+', size = 12) +
+  #annotate('text', x = 13, y = -1, label = 'EBV-', size = 12) +
+  labs(x = 'Cell Type', y = 'Log2 Fold Enrichment', title = 'Cell Type Enrichment (EBV+/EBV-)') + 
+  scale_fill_manual('Cell Types', values = celltype_color, na.value = 'white') +
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+        legend.position = 'none',
+        text = element_text(size = 12))
+  
+ggsave('/mnt/nfs/home/huayingqiu/hodgkinebvmibi/paper_figures/figure2/celltype_log2c.pdf', celltype_log2c, dpi = 320)
+
+
+```
+
+### Figure 2D
+
+
+```{r}
+
+for (celltype in unique(hodgkin_annotated$Annotation)){
+  p <- hodgkin_annotated %>% 
+    group_by(pointNum, Annotation, ebv_status) %>%
+    # Generate a df with column: pointNum, Annotation, ebv_status, n
+    dplyr::count() %>% 
+    ungroup() %>% 
+    group_by(pointNum) %>% 
+    mutate(total_n = sum(n)) %>% 
+    mutate(percent_infil = n/total_n) %>% 
+    ungroup() %>% 
+    # Subset df based on celltype
+    filter(Annotation == celltype) %>% 
+    # Plot
+    ggplot(aes(x = percent_infil, y = reorder(as.factor(pointNum), percent_infil), fill = ebv_status)) + 
+    geom_col() + 
+    scale_fill_manual(values = c('Positive' = '#D55E00', 'Negative' = '#009E73')) + 
+    theme_bw() + 
+    labs(x = 'Proportion Infiltration', y = 'FOV',title = paste0(celltype, ' infiltration'), fill = 'EBV Status') + 
+    theme(legend.position = c(0.9, 0.15),
+          legend.background=element_rect(fill = alpha("white", 0.5)),
+          text = element_text(size = 12)) #+ 
+    #facet_wrap(~gender, scales = 'free_y')
+  ggsave(filename = paste0('~/hodgkinebvmibi/paper_figures/figure2/figure2d/',celltype,'.pdf'), plot = p, width = 10, height = 10, units = 'in')
+    
+}
+
+```
+
+### Figure 2E
+
+
+```{r}
+
+################################################################################################
+# df: data frame
+# id_col: str, name of identifier column
+# celltype_col: str, name of cell type column
+# group1_col: str, name of the variable one wants to stratify
+# group1_level: a vector thet specifies the levels of group1
+# group1_color: a vector like c('a' = color1, 'b' = color2)
+# group1_title: str, a title that will later be the name of the heatmap legend
+# topic_col: str, default is NULL, specify the name of the CN column if doing CN
+# topic_num: str, default is NULL, specify the CN one is interested in 
+# marker_vec: str, vector of markers of interest
+# celltype_vec: str, vector of cell type of interst
+# celltype_color_vec: named str, vector of color for each cell type, c('Tumor' = color1, ....)
+# heatmap_tile: str, title of the heatmap 
+# draw_heatmap: boolean, default TRUE, if TRUE, print the heatmap
+#################################################################################################
+
+marker_heatmap <- function(df, count_df, id_col, celltype_col, 
+                           group1_col, group1_level, group1_color, group1_title, 
+                           topic_col = NULL, topic_num = NULL, marker_vec, celltype_vec,
+                           celltype_color_vec, heatmap_title, draw_heatmap = TRUE, log10_count = FALSE, z_low = -2, z_high = 2){
+  
+  # Calculate the sample mean and sample standard deviation
+  
+  pop_stat <- df %>%
+    # Select all the columns
+    dplyr::select(all_of(id_col), all_of(celltype_col), all_of(group1_col), all_of(marker_vec)) %>% 
+    # Pivot longer to get all the markers into the same column for later grouping
+    pivot_longer(cols = -c(all_of(id_col), all_of(celltype_col), all_of(group1_col)), names_to = 'marker', values_to = 'value') %>% 
+    # Group by marker
+    group_by(marker) %>%
+    # Calculate the mean and sd 
+    summarise(pop_mean = mean(value),
+           pop_sd = mean(value))
+  
+  # If user specifies CN information, calculate stratified sample mean within CN
+  if (!is.null(topic_num)){
+    stratified_stat <- df %>% 
+      # Filter to get cells only within the given CN
+      dplyr::filter(!!as.symbol(topic_col) == topic_num) %>%
+      # Select columns
+      dplyr::select(all_of(id_col), all_of(celltype_col), all_of(group1_col), all_of(marker_vec)) %>%
+      # Pivot all the markers into one column
+      pivot_longer(cols = -c(all_of(id_col), all_of(celltype_col), all_of(group1_col)), names_to = 'marker', values_to = 'value') %>%
+      # Group
+      group_by(marker, !!as.symbol(celltype_col), !!as.symbol(group1_col)) %>%
+      # Calculate stratified sample mean
+      summarise(mu = mean(value)) %>%
+      ungroup() %>%
+      # Select only celltypes of interest
+      dplyr::filter(!!as.symbol(celltype_col) %in% celltype_vec)
+    
+    
+    # Get the count of each celltype for heatmap annotation
+    bar_vec <- count_df %>%
+      filter(!!as.symbol(topic_col) == topic_num) %>% 
+      filter(!!as.symbol(celltype_col) %in% celltype_vec) %>% 
+      group_by(!!as.symbol(celltype_col), !!as.symbol(group1_col)) %>% 
+      dplyr::count() %>% 
+      # log10 count since there are usually a lot of cells
+      mutate(log_n = log10(n)) %>% 
+      arrange(!!as.symbol(group1_col))
+    
+    
+    # If user doesn't specify CN information, calculate across all cells 
+  } else {
+    stratified_stat <- df %>% 
+      # Select columns
+      dplyr::select(all_of(id_col), all_of(celltype_col), all_of(group1_col), all_of(marker_vec)) %>%
+      # Pivot markers into one column
+      pivot_longer(cols = -c(all_of(id_col), all_of(celltype_col), all_of(group1_col)), names_to = 'marker', values_to = 'value') %>% 
+      # Group
+      group_by(marker, !!as.symbol(celltype_col), !!as.symbol(group1_col)) %>% 
+      # Calculate stratified sample mean
+      summarise(mu = mean(value)) %>% 
+      ungroup() %>% 
+      # Select celltypes of interest
+      dplyr::filter(!!as.symbol(celltype_col) %in% celltype_vec)
+    
+    # Get the count of each celltype for heatmap annotation
+    bar_vec <- count_df %>%
+      filter(!!as.symbol(celltype_col) %in% celltype_vec) %>% 
+      group_by(!!as.symbol(celltype_col), !!as.symbol(group1_col)) %>% 
+      dplyr::count() %>% 
+      mutate(log_n = log10(n)) %>% 
+      arrange(!!as.symbol(group1_col))
+  }
+  
+  # match the rows of stratified_stat with marker x to pop_stat with marker x to append the sample mean to stratified_stat 
+  match_idx <- match(stratified_stat$marker, pop_stat$marker)
+    
+  stratified_stat <- stratified_stat %>% 
+    # calculate z score
+    mutate(z_score = (mu - pop_stat$pop_mean[match_idx])/pop_stat$pop_sd[match_idx]) %>% 
+    # Create a new variable by combining the grouping variable and celltype in order to later split the heatmap
+    mutate(celltype_group1 = interaction(!!as.symbol(celltype_col), !!as.symbol(group1_col))) %>% 
+    # arrange the variable to make sure same group stays together 
+    arrange(celltype_group1)
+  
+  # Convert stratified_stat into the desired format of the heatmap
+  heatmap_df <- stratified_stat %>% 
+    dplyr::select(marker, celltype_group1, z_score) %>% 
+    pivot_wider(id_cols = 'marker', names_from = 'celltype_group1', values_from = 'z_score')
+
+  heatmap_mat <- heatmap_df %>% 
+    column_to_rownames(var = 'marker') %>% 
+    as.matrix()
+  
+  # Create a celltype-color LUT
+  color_df <- as.data.frame(celltype_color_vec) %>%
+    rownames_to_column('celltype') %>% 
+    mutate(celltype = str_extract(celltype, '^[^.]+')) %>% 
+    distinct() %>% 
+    arrange(celltype)
+  
+  if (log10_count){
+      # heatmap annotation 1, which contains color blocks to indicate the grouping variable and a barplot for the count of each cell type
+  column_ha <- HeatmapAnnotation(group1 = factor(str_extract(colnames(heatmap_mat), '(?<=\\.).*'), levels = group1_level),
+                               col = list(group1 = group1_color), # color block for grouping variable, order is based on the level specified by the user 
+                      # barplot
+                               count = anno_barplot(bar_vec$log_n, border = FALSE, bar_width = 0.9,
+                                                    gp = gpar(col = 'black', fill = rep(color_df$celltype_color_vec, 2)),
+                                                    height = unit(1, 'cm'),
+                                                    ylim = c(0,6)),
+                               show_annotation_name = FALSE,
+                               annotation_legend_param = list(title = group1_title))
+  } else {
+      # heatmap annotation 1, which contains color blocks to indicate the grouping variable and a barplot for the count of each cell type
+  column_ha <- HeatmapAnnotation(group1 = factor(str_extract(colnames(heatmap_mat), '(?<=\\.).*'), levels = group1_level),
+                               col = list(group1 = group1_color), # color block for grouping variable, order is based on the level specified by the user 
+                      # barplot
+                               count = anno_barplot(bar_vec$n, border = FALSE, bar_width = 0.9,
+                                                    gp = gpar(col = 'black', fill = rep(color_df$celltype_color_vec, 2)),
+                                                    height = unit(1, 'cm')),
+                               show_annotation_name = FALSE,
+                               annotation_legend_param = list(title = group1_title))
+  }
+  
+
+  # heatmap annotaiton 2, bottom color blocks for cell type
+
+  column_ha2 <- HeatmapAnnotation(celltype = rep(color_df$celltype,2),
+                                  col = list(celltype = celltype_color_vec), show_annotation_name = FALSE,
+                                  gp = gpar(col = 'black', lwd = 1),
+                                  annotation_legend_param = list(title = 'Cell Type'))
+  # Set range for Z score 
+  library(circlize)
+  col_fun = colorRamp2(c(z_low, 0, z_high), c('#4575b4', "white", '#d73027'))
+  
+  # Heatmap 
+  h <- Heatmap(heatmap_mat, cluster_columns = FALSE, column_split = factor(str_extract(colnames(heatmap_mat), '(?<=\\.).*'), levels = group1_level), cluster_column_slices = FALSE, cluster_rows = FALSE, row_names_side = 'left', rect_gp = gpar(col = "black", lwd = 1), top_annotation = column_ha, column_title = heatmap_title, bottom_annotation = column_ha2, show_column_names = FALSE, name = 'Z Score', heatmap_legend_param = list(border = 'black'), col = col_fun, row_order = marker_vec, width = ncol(heatmap_mat) * unit(5, 'mm'), height = nrow(heatmap_mat) * unit(5, 'mm'))
+  
+  if (draw_heatmap){
+    draw(h)
+  }
+
+return(h)  
+  
+}
+
+```
+
+
+
+
+```{r}
+
+
+hodgkin_annotated %>% 
+  group_by(ebv_status, Annotation) %>% 
+  dplyr::count() %>% 
+  arrange(Annotation)
+
+
+core_level <- hodgkin_annotated %>% 
+  dplyr::select(pointNum, ebv_status, Annotation, `B2-Microglobulin`, HLA1, `HLA-DR`, CD45RO, Tox, Lag3, `PD-1`, `PD-L1`) %>% 
+  pivot_longer(cols = -c(pointNum, ebv_status, Annotation), names_to = 'marker', values_to = 'value') %>% 
+  group_by(pointNum, ebv_status, Annotation, marker) %>% 
+  summarise(mu = mean(value)) %>% 
+  pivot_wider(names_from = 'marker', values_from = 'mu')
+
+pdf('~/hodgkinebvmibi/paper_figures/figure2/figure2e/MHC-1_log10.pdf')
+
+marker_heatmap(core_level, hodgkin_annotated, 'pointNum', 'Annotation', 
+               group1_col = 'ebv_status', group1_level = c('Positive', 'Negative'), group1_color = c('Positive' = '#D55E00', 
+                                                                                                     'Negative' = '#009E73'),
+               'EBV Status', marker_vec = c('B2-Microglobulin', 'HLA1'), celltype_vec = c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Endothelial', 'Neutrophil', 'NK', 'Treg'),
+               celltype_color_vec = celltype_color[c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Endothelial', 'Neutrophil', 'NK', 'Treg')], heatmap_title = 'MHC-I', log10_count = TRUE, draw_heatmap = TRUE, z_low = -1, z_high = 1)
+
+dev.off()
+
+pdf('~/hodgkinebvmibi/paper_figures/figure2/figure2e/MHC-2_log10.pdf')
+
+marker_heatmap(core_level, hodgkin_annotated, 'pointNum', 'Annotation', 
+               group1_col = 'ebv_status', group1_level = c('Positive', 'Negative'), group1_color = c('Positive' = '#D55E00', 
+                                                                                                     'Negative' = '#009E73'),
+               'EBV Status', marker_vec = c('B2-Microglobulin', 'HLA1', 'HLA-DR'), celltype_vec = c('B', 'DC', 'M1', 'M2', 'Tumor'),
+               celltype_color_vec = celltype_color[c('B', 'DC', 'M1', 'M2', 'Tumor')], heatmap_title = 'MHC-II', log10_count = TRUE, draw_heatmap = FALSE,
+               z_low = -1, z_high = 1)
+
+dev.off()
+
+
+pdf('~/hodgkinebvmibi/paper_figures/figure2/figure2e/Exhaustion_log10.pdf')
+
+marker_heatmap(core_level, hodgkin_annotated, 'pointNum', 'Annotation', 
+               group1_col = 'ebv_status', group1_level = c('Positive', 'Negative'), group1_color = c('Positive' = '#D55E00', 
+                                                                                                     'Negative' = '#009E73'),
+               'EBV Status', marker_vec = c('CD45RO', 'Tox', 'Lag3', 'PD-1'), celltype_vec = c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg'),
+               celltype_color_vec = celltype_color[c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg')], heatmap_title = 'Exhaustion', log10_count = TRUE, draw_heatmap = FALSE,
+               z_low = -1, z_high = 1)
+
+dev.off()
+
+pdf('~/hodgkinebvmibi/paper_figures/figure2/figure2e/Exhaustion_other_log10.pdf')
+
+marker_heatmap(core_level, hodgkin_annotated, 'pointNum', 'Annotation', 
+               group1_col = 'ebv_status', group1_level = c('Positive', 'Negative'), group1_color = c('Positive' = '#D55E00', 
+                                                                                                     'Negative' = '#009E73'),
+               'EBV Status', marker_vec = c('PD-L1'), celltype_vec = c('DC', 'M1', 'M2', 'Tumor'),
+               celltype_color_vec = celltype_color[c('DC', 'M1', 'M2', 'Tumor')], heatmap_title = 'Exhaustion', log10_count = TRUE, draw_heatmap = FALSE,
+               z_low = -1, z_high = 1)
+
+dev.off()
+  
+
+
+
+```
+
