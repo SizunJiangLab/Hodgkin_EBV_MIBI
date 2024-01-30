@@ -1,0 +1,270 @@
+---
+title: "Supplementary Figures"
+author: "Huaying Qiu"
+date: "2024-01-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Supplementary
+
+### Test heatmap
+
+#### Figure2
+
+```{r}
+
+fig2_test_df <- read_csv('~/hodgkinebvmibi/paper_figures/figure2/test.csv')
+
+fig2_test_df <- fig2_test_df %>% 
+  mutate(plot_value = ifelse(reject.adj == 1, p.value, NA))
+
+
+MHC1_test <- fig2_test_df %>% 
+  filter(marker %in% c('B2-Microglobulin', 'HLA1') & 
+           celltype %in% c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Endothelial', 'Neutrophil', 'NK', 'Treg')) %>% 
+  #mutate(marker = paste0(marker, ', EBV+ vs. EBV-')) %>%
+  mutate(marker = factor(marker, level = c('HLA1', 'B2-Microglobulin'))) %>% 
+  mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>%
+  ggplot(aes(x = celltype, y = marker, fill = plot_value)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between marker, EBV+ vs. EBV-') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  coord_equal()
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure2/supp/supp_MHC1.pdf', MHC1_test)
+
+MHC2_test <- fig2_test_df %>% 
+  filter(marker %in% c('B2-Microglobulin', 'HLA1', 'HLA-DR') & 
+           celltype %in% c('B', 'DC', 'M1', 'M2', 'Tumor')) %>% 
+  #mutate(marker = paste0(marker, ', EBV+ vs. EBV-')) %>%
+  mutate(marker = factor(marker, level = c('HLA-DR', 'HLA1', 'B2-Microglobulin'))) %>% 
+  mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>%
+  ggplot(aes(x = celltype, y = marker, fill = plot_value)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between marker, EBV+ vs. EBV-') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  coord_equal()
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure2/supp/supp_MHC2.pdf', MHC2_test)
+
+exhaustion_t <- fig2_test_df %>% 
+  filter(marker %in% c('PD-1', 'Lag3', 'Tox', 'CD45RO')& 
+           celltype %in% c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg')) %>% 
+  #mutate(marker = paste0(marker, ', EBV+ vs. EBV-')) %>%
+  mutate(marker = factor(marker, level = c('PD-1', 'Lag3', 'Tox', 'CD45RO'))) %>% 
+  mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>%
+  ggplot(aes(x = celltype, y = marker, fill = plot_value)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between marker, EBV+ vs. EBV-') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  coord_equal()
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure2/supp/supp_exhaustion_t.pdf', exhaustion_t)
+
+exhaustion_other <- fig2_test_df %>% 
+  filter(marker %in% c('PD-L1')& 
+           celltype %in% c('DC', 'M1', 'M2', 'Tumor')) %>% 
+  #mutate(marker = paste0(marker, ', EBV+ vs. EBV-')) %>%
+  mutate(marker = factor(marker, level = c('PD-L1'))) %>% 
+  mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>%
+  ggplot(aes(x = celltype, y = marker, fill = plot_value)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between marker, EBV+ vs. EBV-') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  coord_equal()
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure2/supp/supp_exhaustion_other.pdf', exhaustion_other)
+
+```
+
+#### Figure 3
+
+
+```{r}
+
+fig3e_test <- read_csv('~/hodgkinebvmibi/paper_figures/figure3/fig3e_test.csv')
+
+fig3e_test <- fig3e_test %>% 
+  mutate(plot_value = ifelse(reject.adj == 1, p.value, NA))
+
+test1 <- fig3e_test %>% 
+  mutate(test = str_replace(test, 'Positive', 'EBV+')) %>% 
+  mutate(test = str_replace(test, 'Negative', 'EBV-')) %>% 
+  filter(str_detect(test, 'EBV\\+')) %>% 
+  filter(celltype %in% c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg') & 
+           marker %in% c('PD-1', 'Lag3', 'Tox', 'CD45RO', 'HLA1', 'B2-Microglobulin')) %>% 
+  mutate(marker = factor(marker, levels = c('PD-1', 'Lag3', 'Tox', 'CD45RO', 'HLA1', 'B2-Microglobulin'))) %>% 
+  ggplot(aes(x = celltype, y = interaction(marker, test, sep = ', '), fill = plot_value)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between marker within EBV+, CN0 vs. CN1') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  coord_equal()
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure3/supp/test1.pdf', test1)
+
+test2 <- fig3e_test %>% 
+  mutate(test = str_replace(test, 'Positive', 'EBV+')) %>% 
+  mutate(test = str_replace(test, 'Negative', 'EBV-')) %>% 
+  filter(str_detect(test, 'EBV\\-')) %>% 
+  filter(celltype %in% c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg') & 
+           marker %in% c('PD-1', 'Lag3', 'Tox', 'CD45RO', 'HLA1', 'B2-Microglobulin')) %>% 
+  mutate(marker = factor(marker, levels = c('PD-1', 'Lag3', 'Tox', 'CD45RO', 'HLA1', 'B2-Microglobulin'))) %>% 
+  ggplot(aes(x = celltype, y = interaction(marker, test, sep = ', '), fill = plot_value)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between marker within EBV-, CN0 vs. CN1') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  coord_equal()
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure3/supp/test2.pdf', test2)
+
+test3 <- fig3e_test %>% 
+  mutate(test = str_replace(test, 'Positive', 'EBV+')) %>% 
+  mutate(test = str_replace(test, 'Negative', 'EBV-')) %>% 
+  filter(str_detect(test, 'EBV\\+')) %>% 
+  filter(celltype %in% c('DC', 'M1', 'M2', 'Tumor') & 
+           marker %in% c('PD-L1', 'HLA-DR', 'HLA1', 'B2-Microglobulin')) %>% 
+  mutate(marker = factor(marker, levels = c('PD-L1', 'HLA-DR', 'HLA1', 'B2-Microglobulin'))) %>% 
+  ggplot(aes(x = celltype, y = interaction(marker, test, sep = ', '), fill = plot_value)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between marker within EBV+, CN0 vs. CN1') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  coord_equal()
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure3/supp/test3.pdf', test3)
+
+test4 <- fig3e_test %>% 
+  mutate(test = str_replace(test, 'Positive', 'EBV+')) %>% 
+  mutate(test = str_replace(test, 'Negative', 'EBV-')) %>% 
+  filter(str_detect(test, 'EBV\\-')) %>% 
+  filter(celltype %in% c('DC', 'M1', 'M2', 'Tumor') & 
+           marker %in% c('PD-L1', 'HLA-DR', 'HLA1', 'B2-Microglobulin')) %>% 
+  mutate(marker = factor(marker, levels = c('PD-L1', 'HLA-DR', 'HLA1', 'B2-Microglobulin'))) %>% 
+  ggplot(aes(x = celltype, y = interaction(marker, test, sep = ', '), fill = plot_value)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between marker within EBV-, CN0 vs. CN1') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90)) + 
+  coord_equal()
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure3/supp/test4.pdf', test4)
+  
+
+```
+
+
+```{r}
+
+exhaustion_test_df <- read_csv('~/hodgkinebvmibi/paper_figures/figure4/fig4c_test.csv')
+
+exhaustion_test_result_df %>% 
+  mutate(ebv_status = paste0('Dense vs. Sparse, ', str_extract(test, '(?<=, ).*'))) %>% 
+  mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>% 
+  ggplot(aes(x = celltype, y = ebv_status, fill = reject.adj)) + 
+  geom_tile(color = 'black', size = 0.5) +
+  scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
+  theme_bw() + 
+  labs(fill = 'Test Result', title = 'Difference between the exhaustion score of tumor dense and sparse area') + 
+  theme(panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90))
+
+```
+
+#### Figure 4
+
+```{r}
+
+exhaustion_supp <- exhaustion_df %>% 
+  filter(bin_deriva != 'Far') %>% 
+  dplyr::select(pointNum, Annotation, ebv_status, bin_deriva, CD45RO, CD45RA, Tox, `PD-1`, `Ki-67`, Lag3, `PD-L1`) %>% 
+  pivot_longer(cols = -c(pointNum, Annotation, ebv_status, bin_deriva), names_to = 'marker', values_to = 'value') %>% 
+  group_by(pointNum, Annotation, ebv_status, bin_deriva, marker) %>% 
+  summarise(mu = mean(value)) %>% 
+  ggplot(aes(x = interaction(bin_deriva, ebv_status), y = mu, fill = bin_deriva)) + 
+  geom_boxplot(position = position_dodge(1), outlier.alpha = 0) + 
+  geom_point(position = position_jitterdodge(), alpha = 0.5) + 
+  coord_cartesian(ylim = c(0,1)) + 
+  stat_compare_means(comparisons = list(c('Tumor Dense.Positive', 'Tumor Sparse.Positive'), c('Tumor Dense.Negative', 'Tumor Sparse.Negative')), 
+                     method.args = list(alternative = 'greater', exact = FALSE),
+                     label = 'p.signif', label.y = 0.9) + 
+  facet_grid(vars(Annotation), vars(marker), scales = 'free_y') + 
+  scale_fill_manual(values = c('#f6adff', '#e1d936')) + 
+  theme_bw() + 
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = 'none') + 
+  labs(x = 'Tumor Density, EBV Status', y = 'Mean Marker Expression', fill = 'Tumor Density')
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure4/supp/individual_marker.pdf', exhaustion_supp, height = 15, width = 10, units = 'cm')
+
+```
