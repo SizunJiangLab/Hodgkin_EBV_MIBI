@@ -1,0 +1,13 @@
+cell_type,microenvironment
+EBV+_Tumor,EBV+
+EBV+_CD4mem,EBV+
+EBV+_CD4naive,EBV+
+EBV+_CD8mem,EBV+
+EBV+_CD8naive,EBV+
+EBV+_Other,EBV+
+EBV-_Tumor,EBV-
+EBV-_CD4mem,EBV-
+EBV-_CD4naive,EBV-
+EBV-_CD8mem,EBV-
+EBV-_CD8naive,EBV-
+EBV-_Other,EBV-

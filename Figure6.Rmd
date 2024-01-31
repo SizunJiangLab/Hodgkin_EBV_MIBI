@@ -1,0 +1,1645 @@
+---
+title: "Figure6"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+### Figure 6A = correlation heatmap
+
+```{r}
+pacman::p_load(tidyverse, msigdbr, GSVA, randomcoloR, ComplexHeatmap)
+```
+
+```{r}
+# data/metadata
+norm_counts <- read.csv('/mnt/nfs/home/jasonyeung/cHL_EBV/EBV_chl_batchcorrected-CPM-nNCGH_1500-K_11.csv') %>%
+  column_to_rownames(var = 'X') %>% t() %>% as.data.frame() %>%
+  rownames_to_column(var = 'X') %>%
+  dplyr::mutate(X = str_replace_all(X, '\\.', '-'))
+
+mdata <- read.csv('/mnt/nfs/home/jasonyeung/cHL_EBV/Hodgkin_MIBI_GeoMx_Metadata.csv') %>%
+  column_to_rownames(var = 'X') %>%
+  dplyr::filter(!(Sample_ID == "DSP-1001660020563-B-C08")) %>% # drop roi with no reads
+  dplyr::filter(!EBV_status == 'ons')
+
+geomx_cells <- read.csv('/mnt/nfs/home/jasonyeung/cHL_EBV/ROI_cell_count.csv') %>%
+  pivot_wider(names_from = Annotation, values_from = n)
+
+pathway_check <- readxl::read_excel('/mnt/nfs/home/jasonyeung/cHL_EBV/final_pathways.xlsx', sheet = 'v2')
+pathway_names <- pathway_check %>%
+  dplyr::pull(GENE_SET)
+pathway_check <- split(pathway_check, f = pathway_check$ANNOTATION)
+```
+
+```{r}
+msigdb <- msigdbr(species = 'Homo sapiens')
+
+curated_pathways <- msigdb %>%
+  dplyr::filter(gs_name %in% pathway_names)
+curated_pathways <- split(x = curated_pathways$gene_symbol, f = curated_pathways$gs_name)
+
+# setdiff(pathway_names, names(curated_pathways)) # should be character(0)
+```
+
+```{r}
+pathways <- curated_pathways # assign pathway curation
+
+counts_mtx <- norm_counts %>%
+  column_to_rownames(var = 'X') %>%
+  t()
+
+gsva_out <- gsva(counts_mtx, pathways, method = 'gsva', mx.diff = TRUE)
+
+scores <- gsva_out[, sort(colnames(gsva_out))] %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'Pathway') %>%
+  pivot_longer(!Pathway, names_to = 'ROI', values_to = 'ES') %>%
+  dplyr::mutate(ROI = factor(ROI, ordered = TRUE, levels = sort(unique(ROI))))
+
+scores_wmdata <- left_join(scores, mdata[, c('Sample_ID', 'Patient', 'Core', 'EBV_status', 'roi', 'segment')], 
+                           by = c('ROI' = 'Sample_ID'))
+
+# write_csv(scores_wmdata, file = '/mnt/nfs/home/jasonyeung/cHL_EBV/curated_pathway_ES_scores.csv')
+# 
+# read_csv('/mnt/nfs/home/jasonyeung/cHL_EBV/curated_pathway_ES_scores.csv')
+```
+
+```{r}
+ebvpos_mtx <- scores_wmdata %>% dplyr::filter(EBV_status == 'EBV+') %>%
+  dplyr::select(-ROI, -Patient, -Core, -EBV_status) %>%
+  pivot_wider(names_from = segment, values_from = ES) %>%
+  pivot_wider(names_from = Pathway, values_from = c(CD4mem, CD4naive, CD8mem, CD8naive, Other, Tumor)) %>%
+  column_to_rownames(var = 'roi')
+
+ebvneg_mtx <- scores_wmdata %>% dplyr::filter(EBV_status == 'EBV-') %>%
+  dplyr::select(-ROI, -Patient, -Core, -EBV_status) %>%
+  pivot_wider(names_from = segment, values_from = ES) %>%
+  pivot_wider(names_from = Pathway, values_from = c(CD4mem, CD4naive, CD8mem, CD8naive, Other, Tumor)) %>%
+  column_to_rownames(var = 'roi')
+```
+
+```{r}
+# corr mtxs
+ebvpos_rcorr <- psych::corr.test(as.matrix(ebvpos_mtx), method = 'spearman')
+ebvpos_cor <- ebvpos_rcorr$r
+ebvpos_pv <- ebvpos_rcorr$p
+
+ebvneg_rcorr <- psych::corr.test(as.matrix(ebvneg_mtx), method = 'spearman')
+ebvneg_cor <- ebvneg_rcorr$r
+ebvneg_pv <- ebvneg_rcorr$p
+
+# use order from ebvpos cor cluster
+od <- hclust(dist(ebvpos_cor), method = 'complete')$order
+
+ebvpos_cor <- ebvpos_cor[od, od]
+ebvpos_pv <- ebvpos_pv[od, od]
+
+ebvneg_cor <- ebvneg_cor[od, od]
+ebvneg_pv <- ebvneg_pv[od, od]
+```
+
+```{r}
+### pull +/- diff pathways
+
+difference <- abs(ebvpos_cor - ebvneg_cor)
+
+row_means <- rowMeans(difference) # for filtering by mean diff
+
+threshold <- 0.15 # threshold difference for mean
+
+filtered_diff <- difference[row_means > threshold, row_means > threshold]
+
+keep <- rownames(filtered_diff)
+```
+
+```{r}
+ebvpos_cor.filtered <- ebvpos_cor[keep, keep]
+ebvneg_cor.filtered <- ebvneg_cor[keep, keep]
+
+# use order from ebvpos.filtered cor cluster
+od <- hclust(dist(ebvpos_cor.filtered), method = 'complete')$order
+
+ebvpos_cor.filtered <- ebvpos_cor.filtered[od, od]
+ebvneg_cor.filtered <- ebvneg_cor.filtered[od, od]
+
+# combine
+combined_cor.filtered <- ebvneg_cor.filtered
+combined_cor.filtered[upper.tri(combined_cor.filtered)] <- ebvpos_cor.filtered[upper.tri(ebvpos_cor.filtered)]
+diag(combined_cor.filtered) <- NA
+```
+
+```{r}
+set.seed(2023)
+
+to_plot <- combined_cor.filtered
+
+### PATHWAY
+src_annotation <- rep('empty', length(colnames(to_plot)))
+src_annotation[grepl('CD4mem_', colnames(to_plot))] <- 'CD4_MEM'
+src_annotation[grepl('CD8mem_', colnames(to_plot))] <- 'CD8_MEM'
+src_annotation[grepl('CD4naive_', colnames(to_plot))] <- 'CD4_NAIVE'
+src_annotation[grepl('CD8naive_', colnames(to_plot))] <- 'CD8_NAIVE'
+src_annotation[grepl('Tumor_', colnames(to_plot))] <- 'TUMOR'
+src_annotation[grepl('Other_', colnames(to_plot))] <- 'OTHER'
+
+# pathway bucket annotation
+path_annotation <- rep('empty', length(colnames(to_plot)))
+
+for (n in 1:length(colnames(to_plot))) {
+  col <- colnames(to_plot)[n]
+  pathway <- str_extract(col, '^\\w*?_(.*)$', group = 1)
+  for (bucket in names(pathway_check)) {
+    if (pathway %in% pathway_check[[bucket]]$GENE_SET) {
+      path_annotation[n] <- bucket
+    }
+  }
+}
+
+annotation_colors <- distinctColorPalette(length(unique(c(src_annotation, path_annotation))))
+# src_annotation_colors <- annotation_colors[1:length(unique(src_annotation))]
+src_annotation_colors <- c('#015430', '#399E48', '#4D4992', '#AB6EA4', '#F1C8C0', '#D12D2B')
+path_annotation_colors <- annotation_colors[(length(unique(src_annotation))+1):length(annotation_colors)]
+
+names(src_annotation_colors) <- sort(unique(src_annotation))
+names(path_annotation_colors) <- sort(unique(path_annotation))
+
+top_annotation <- HeatmapAnnotation(ROI = src_annotation,
+                                    Pathway = path_annotation,
+                                    col = list(ROI = src_annotation_colors,
+                                               Pathway = path_annotation_colors), 
+                                    show_legend = T,
+                                    show_annotation_name = T)
+
+left_annotation <- rowAnnotation(ROI = src_annotation,
+                                 Pathway = path_annotation,
+                                 col = list(ROI = src_annotation_colors,
+                                            Pathway = path_annotation_colors), 
+                                 show_legend = F,
+                                 show_annotation_name = T)
+
+```
+
+```{r}
+pdf(file = '/mnt/nfs/home/jasonyeung/cHL_EBV/filtered_corr.pdf', width = 12, height = 10)
+ht_plot <- Heatmap(to_plot,
+                   name = 'corr',
+                   row_title = 'EBV NEGATIVE',
+                   row_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   column_title = 'EBV POSITIVE',
+                   column_title_gp = gpar(fontsize = 16, fontface = "bold"),
+                   col = cor_col_fun,
+                   top_annotation = top_annotation,
+                   left_annotation = left_annotation,
+                   cluster_rows = F,
+                   cluster_columns = F,
+                   show_row_dend = F,
+                   show_column_dend = F,
+                   show_row_names = T,
+                   row_names_gp = grid::gpar(fontsize = 4),
+                   show_column_names = T,
+                   column_names_gp = grid::gpar(fontsize = 4))
+
+draw(ht_plot, heatmap_legend_side = 'left', annotation_legend_side = 'left',
+     padding = unit(c(40, 10, 10, 40), "mm"))
+dev.off()
+```
+
+### Figure 6B = antiviral responses pathway heatmap
+
+```{r}
+df = read.csv('../data/EBV_chl_batchcorrected-CPM-nNCGH_1500-K_11.csv') # row as sample column as features
+df = t(df)
+df = as.data.frame(df)
+colnames(df) = df[1,]
+df = df[-1,]
+rownames(df) = gsub('\\.', '-', rownames(df))
+
+# read in the meta data
+meta1 = read.csv('../result/ebv_chl_meta.csv')
+meta_ebv = meta1[match(rownames(df), meta1$Sample_ID),]
+meta_ebv <- na.omit(meta_ebv)
+meta = meta_ebv
+
+## need to remove some samples since no coutns somehow
+sampname = rownames(df)
+meta = meta[meta$Sample_ID %in% sampname,]
+
+#### subset
+sampnametarget = meta$Sample_ID[meta$EBV != 'ons']# remove tonsil
+df = df[match(sampnametarget, sampname),]
+df_meta = meta[match(sampnametarget, meta$Sample_ID),]
+
+# add patient information??
+df_meta$patient = str_sub(df_meta$roi, start = 3, end = -4)
+df_meta$patient = gsub('\\.[0-9]', '', df_meta$patient)
+
+## add ROI_num
+df_meta$ROI_num = str_sub(df_meta$roi, start = 3, end = -2)
+df_meta$T_ind = 'non-T'
+df_meta$T_ind[df_meta$segment %in% c('CD4naive', 'CD4mem', 'CD8naive', 'CD8mem')] = 'T'
+df_meta$Tu_ind = 'non-Tu'
+df_meta$Tu_ind[df_meta$segment %in% c('Tumor')] = 'Tumor'
+
+
+df2 <- mutate_all(df, function(x) as.numeric(as.character(x)))
+df = df2
+```
+
+### Figure 6C = T cell dysfunction pathway heatmap
+
+```{r}
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(GSVA)
+
+df = read.csv('../data/EBV_chl_batchcorrected-CPM-nNCGH_1500-K_11.csv') # row as sample column as features
+df = t(df)
+df = as.data.frame(df)
+colnames(df) = df[1,]
+df = df[-1,]
+rownames(df) = gsub('\\.', '-', rownames(df))
+
+# read in the meta data
+meta1 = read.csv('../result/ebv_chl_meta.csv')
+meta_ebv = meta1[match(rownames(df), meta1$Sample_ID),]
+meta_ebv <- na.omit(meta_ebv)
+meta = meta_ebv
+
+## need to remove some samples since no coutns somehow
+sampname = rownames(df)
+meta = meta[meta$Sample_ID %in% sampname,]
+
+#### subset
+sampnametarget = meta$Sample_ID[meta$EBV != 'ons']# remove tonsil
+df = df[match(sampnametarget, sampname),]
+df_meta = meta[match(sampnametarget, meta$Sample_ID),]
+
+# add patient information??
+df_meta$patient = str_sub(df_meta$roi, start = 3, end = -4)
+df_meta$patient = gsub('\\.[0-9]', '', df_meta$patient)
+
+## add ROI_num
+df_meta$ROI_num = str_sub(df_meta$roi, start = 3, end = -2)
+df_meta$T_ind = 'non-T'
+df_meta$T_ind[df_meta$segment %in% c('CD4naive', 'CD4mem', 'CD8naive', 'CD8mem')] = 'T'
+df_meta$Tu_ind = 'non-Tu'
+df_meta$Tu_ind[df_meta$segment %in% c('Tumor')] = 'Tumor'
+
+
+df2 <- mutate_all(df, function(x) as.numeric(as.character(x)))
+df = df2
+```
+
+
+###### added on jan 14 for exhaustion gene list
+
+```{r}
+#gmt_file_cgp <-GSA.read.gmt('../data/c2.all.v2023.1.Hs.symbols.gmt')
+
+prog_t_genes = c(
+'CD28',
+'SELL',
+'IL7R',
+'HIF1A',
+'BACH2',
+'ID3',
+'TCF7',
+'LEF1',
+'SATB1',
+'BCL6',
+'CXCR5',
+'CCR7',
+'XCL1',
+'CXCL10'
+)
+
+term_t_genes = c(
+  'PDCD1',
+'HAVCR2',
+'CD244',
+'ENTPD1',
+'CD38',
+'PTGFRN',
+'TNFRSF9',
+'IL2RB',
+'IFNG',
+'GZMA',
+'GZMB',
+'PRF1',
+'TNFSF10',
+'FASLG',
+'ID2',
+'PRDM1',
+'CCL5',
+'CCL4L2',
+'CCL3',
+'CSF1'
+)
+
+
+result = df_meta
+##### start calc
+
+targetScore=gsva(t(df),list(prog_t_genes),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result['prog_tcell'] = t(targetScore)
+df_meta['prog_tcell'] = t(targetScore)
+
+targetScore=gsva(t(df),list(term_t_genes),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result['term_tcell'] = t(targetScore)
+df_meta['term_tcell'] = t(targetScore)
+
+## plot
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_exhaus_prog_term.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_exhaus_prog_term.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+write.csv(df_meta, '../result/df_meta_scores_additional_exh_prog_term_jan24.csv')
+```
+
+
+###### added on jan 14 for exhaustion gene list
+
+```{r}
+gmt_file_cgp <-GSA.read.gmt('../data/c2.all.v2023.1.Hs.symbols.gmt')
+
+ex_t_genes = c(
+  'BATF',
+'BTLA',
+'CD96',
+'CD160',
+'CTLA4',
+'EGR2',
+'ENTPD1',
+'EOMES',
+'HAVCR2',
+'KLRC2',
+'LAG3',
+'NFATC2',
+'NR4A1',
+'NR4A2',
+'NR4A3',
+'PDCD1',
+'PRDM1',
+'SLAMF6',
+'SLAMF7',
+'TOX',
+'TO2',
+'TIGIT',
+'VSIR'
+)
+
+ex_non_t_genes = c(
+  'CD48',
+'CD274',
+'CD276',
+'CEACAM1',
+'FGL1',
+'HLA-E',
+'HLA-F',
+'IDO1',
+'LCALS9C', # not in
+'NECTIN2',
+'PDCD1LG2',
+'PVR',
+'TNFRSF14',
+'VEGFA',
+'VTCN1'
+)
+
+sen_t_genes = c(
+  'KLRG1',
+'B3GAT1',
+'CD28'
+)
+sen_t_genes = c(sen_t_genes, gmt_file_cgp$genesets[gmt_file_cgp$geneset.names == 'REACTOME_SENESCENCE_ASSOCIATED_SECRETORY_PHENOTYPE_SASP'])
+sen_t_genes = unlist(sen_t_genes)
+
+result = df_meta
+##### start calc
+
+targetScore=gsva(t(df),list(ex_t_genes),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result['Exhaustion_tcell'] = t(targetScore)
+df_meta['Exhaustion_tcell'] = t(targetScore)
+
+targetScore=gsva(t(df),list(ex_non_t_genes),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result['Exhaustion_nontcell'] = t(targetScore)
+df_meta['Exhaustion_nontcell'] = t(targetScore)
+
+targetScore=gsva(t(df),list(sen_t_genes),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result['Senescence_tcell'] = t(targetScore)
+df_meta['Senescence_tcell'] = t(targetScore)
+
+## plot
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_exhaus.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_exhaus.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+write.csv(df_meta, '../result/df_meta_scores_additional_exh_jan24.csv')
+```
+
+
+### load in gmt files
+
+```{r}
+#bp_gmt = read.csv('../data/c5.go.bp.v2023.1.Hs.symbols.gmt', sep = '\t', header = F)
+
+library(GSA)
+# 
+gmt_file <-GSA.read.gmt('../data/c5.go.v2023.1.Hs.symbols.gmt')
+gmt_file_imm <-GSA.read.gmt('../data/c7.immunesigdb.v2023.1.Hs.symbols.gmt')
+gmt_file_cgp <-GSA.read.gmt('../data/c2.all.v2023.1.Hs.symbols.gmt')
+gmt_file_hall <-GSA.read.gmt('../data/h.all.v2023.1.Hs.symbols.gmt')
+gmt_file_hp <-GSA.read.gmt('../data/c5.hpo.v2023.1.Hs.symbols.gmt')
+
+#head(gmt_file$genesets)
+#head(gmt_file$geneset.names)
+```
+
+
+```{r}
+## read all input targets
+library(readxl)
+targetsheet = readxl::read_excel('../data/Fig_6_genes_jan2024.xlsx', sheet = 'Ag_presentation')
+
+n = nrow(targetsheet)
+result = df_meta
+
+#n = 3
+for (i in c(1:n)){
+  
+  source = targetsheet[i,'Source']
+  if (source == 'Manual'){ # manual count genes
+    genlist = unlist(str_split(targetsheet[i,'Genes'], '/'))
+    genlist = gsub('\\.','-', genlist)
+    print(genlist)
+    
+    # in this case we calculated by manual gene lists
+    name = as.character(targetsheet[i,'Pathway'])
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[name] = t(targetScore)
+    df_meta[name] = t(targetScore)
+    
+  }
+  
+  else{ # this case is msigdb
+    
+    #gmt_file_match = gmt_file$genesets[str_detect(gmt_file$geneset.names, 'ANGIOGENESIS')]
+    pathway = as.character(targetsheet[i,'Pathway'])
+    gmt_file_match = unlist(gmt_file$genesets[gmt_file$geneset.names ==  pathway])
+    gmt_file_match_im = unlist(gmt_file_imm$genesets[gmt_file_imm$geneset.names ==  pathway]) 
+    genlist = c(gmt_file_match, gmt_file_match_im)
+    genlist = gsub('\\.','-', genlist)
+    print(genlist)
+    
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[pathway] = t(targetScore)
+    df_meta[pathway] = t(targetScore)
+  
+  }
+
+}
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+#plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+#                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+#                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_Ag_presentation_jan24.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_Ag_presentation_jan24.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+```
+
+
+```{r}
+## read all input targets
+library(readxl)
+targetsheet = readxl::read_excel('../data/Fig_6_genes_jan2024.xlsx', sheet = 'T_cytotoxic')
+
+n = nrow(targetsheet)
+result = df_meta
+
+#n = 3
+for (i in c(1:n)){
+  
+  source = targetsheet[i,'Source']
+  if (source == 'Manual'){ # manual count genes
+    genlist = unlist(str_split(targetsheet[i,'Genes'], '/'))
+    #print(genlist)
+    
+    # in this case we calculated by manual gene lists
+    name = as.character(targetsheet[i,'Pathway'])
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[name] = t(targetScore)
+    df_meta[name] = t(targetScore)
+    
+  }
+  
+  else{ # this case is msigdb
+    
+    #gmt_file_match = gmt_file$genesets[str_detect(gmt_file$geneset.names, 'ANGIOGENESIS')]
+    pathway = as.character(targetsheet[i,'Pathway'])
+    gmt_file_match = unlist(gmt_file$genesets[gmt_file$geneset.names ==  pathway])
+    gmt_file_match_im = unlist(gmt_file_imm$genesets[gmt_file_imm$geneset.names ==  pathway]) 
+    genlist = c(gmt_file_match, gmt_file_match_im)
+    # incase it is in immune
+    #print(c(length(genlist), pathway))
+
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[pathway] = t(targetScore)
+    df_meta[pathway] = t(targetScore)
+    
+  }
+
+  
+}
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+#plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+#                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+#                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_T_cytotoxic_jan2024.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_T_cytotoxic_jan2024.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+```
+
+
+```{r}
+## read all input targets
+library(readxl)
+targetsheet = readxl::read_excel('../data/Fig_6_genes_v3.xlsx', sheet = 'T_dysregulation_T')
+
+n = nrow(targetsheet)
+result = df_meta
+
+#n = 3
+for (i in c(1:n)){
+  
+  source = targetsheet[i,'Source']
+  if (source == 'Manual'){ # manual count genes
+    genlist = unlist(str_split(targetsheet[i,'Genes'], '/'))
+    #print(genlist)
+    
+    # in this case we calculated by manual gene lists
+    name = as.character(targetsheet[i,'Pathway'])
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[name] = t(targetScore)
+    df_meta[name] = t(targetScore)
+    
+  }
+  
+  else{ # this case is msigdb
+    
+    #gmt_file_match = gmt_file$genesets[str_detect(gmt_file$geneset.names, 'ANGIOGENESIS')]
+    pathway = as.character(targetsheet[i,'Pathway'])
+    gmt_file_match = unlist(gmt_file$genesets[gmt_file$geneset.names ==  pathway])
+    gmt_file_match_im = unlist(gmt_file_imm$genesets[gmt_file_imm$geneset.names ==  pathway]) 
+    gmt_file_match_cgp = unlist(gmt_file_cgp$genesets[gmt_file_cgp$geneset.names ==  pathway]) 
+    genlist = c(gmt_file_match, gmt_file_match_im, gmt_file_match_cgp)
+    # incase it is in immune
+    #print(c(length(genlist), pathway))
+
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[pathway] = t(targetScore)
+    df_meta[pathway] = t(targetScore)
+    
+  }
+
+}
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+#plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+#                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+#                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_T_dysregulation_T_jan24.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_T_dysregulation_T_jan24.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+```
+
+
+here
+```{r}
+## read all input targets
+library(readxl)
+targetsheet = readxl::read_excel('../data/Fig_6_genes_v3.xlsx', sheet = 'T_dysregulation_non_T')
+
+n = nrow(targetsheet)
+result = df_meta
+
+#n = 3
+for (i in c(1:n)){
+  
+  source = targetsheet[i,'Source']
+  if (source == 'Manual'){ # manual count genes
+    genlist = unlist(str_split(targetsheet[i,'Genes'], '/'))
+    #print(genlist)
+    
+    # in this case we calculated by manual gene lists
+    name = as.character(targetsheet[i,'Pathway'])
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[name] = t(targetScore)
+    df_meta[name] = t(targetScore)
+    
+  }
+  
+  else{ # this case is msigdb
+    
+    #gmt_file_match = gmt_file$genesets[str_detect(gmt_file$geneset.names, 'ANGIOGENESIS')]
+    pathway = as.character(targetsheet[i,'Pathway'])
+    gmt_file_match = unlist(gmt_file$genesets[gmt_file$geneset.names ==  pathway])
+    gmt_file_match_im = unlist(gmt_file_imm$genesets[gmt_file_imm$geneset.names ==  pathway]) 
+    gmt_file_match_cgp = unlist(gmt_file_cgp$genesets[gmt_file_cgp$geneset.names ==  pathway]) 
+    genlist = c(gmt_file_match, gmt_file_match_im, gmt_file_match_cgp)
+    # incase it is in immune
+    #print(c(length(genlist), pathway))
+
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[pathway] = t(targetScore)
+    df_meta[pathway] = t(targetScore)
+    
+  }
+
+}
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+#plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+#                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+#                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_T_dysregulation_non_T_jan24.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_T_dysregulation_non_T_jan24.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+```
+
+
+```{r}
+## read all input targets
+library(readxl)
+targetsheet = readxl::read_excel('../data/Fig_6_genes.xlsx', sheet = 'TME_remodeling')
+
+n = nrow(targetsheet)
+result = df_meta
+
+#n = 3
+for (i in c(1:n)){
+  
+  source = targetsheet[i,'Source']
+  if (source == 'Manual'){ # manual count genes
+    genlist = unlist(str_split(targetsheet[i,'Genes'], '/'))
+    #print(genlist)
+    
+    # in this case we calculated by manual gene lists
+    name = as.character(targetsheet[i,'Pathway'])
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[name] = t(targetScore)
+    df_meta[name] = t(targetScore)
+    
+  }
+  
+  else{ # this case is msigdb
+    
+    #gmt_file_match = gmt_file$genesets[str_detect(gmt_file$geneset.names, 'ANGIOGENESIS')]
+    pathway = as.character(targetsheet[i,'Pathway'])
+    gmt_file_match = unlist(gmt_file$genesets[gmt_file$geneset.names ==  pathway])
+    gmt_file_match_im = unlist(gmt_file_imm$genesets[gmt_file_imm$geneset.names ==  pathway]) 
+    gmt_file_match_cgp = unlist(gmt_file_cgp$genesets[gmt_file_cgp$geneset.names ==  pathway]) 
+    genlist = c(gmt_file_match, gmt_file_match_im, gmt_file_match_cgp)
+    # incase it is in immune
+    #print(c(length(genlist), pathway))
+
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[pathway] = t(targetScore)
+    df_meta[pathway] = t(targetScore)
+    
+  }
+
+}
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+#plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+#                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+#                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_TME_remodeling_jan24.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_TME_remodeling_jan24.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+```
+
+###### updated nov17
+
+```{r}
+
+targetlist = c(
+  
+  'MHC_CLASS_II_BIOSYNTHETIC_PROCESS',
+  'MHC_CLASS_II_PEPTIDE_LOADING_COMPLEX ',
+  'MHC_CLASS_II_PROTEIN_COMPLEX',
+  'MHC_CLASS_II_RECEPTOR_ACTIVITY',
+  'MHC_CLASS_II_PROTEIN_COMPLEX_BINDING',
+  'MHC_CLASS_II_PROTEIN_BINDING'
+  
+)
+
+
+## read all input targets
+library(readxl)
+#targetsheet = readxl::read_excel('../data/Fig_6_genes.xlsx', sheet = 'TME_remodeling')
+
+n = length(targetlist)
+result = df_meta
+
+for (i in c(1:n)){
+  
+  pathway =  targetlist[i]
+  id = grep(pathway,gmt_file$geneset.names)[1]
+  if (!is.na(id)){
+    gmt_file_match = unlist(gmt_file$genesets[id])
+    genlist = gmt_file_match
+    genlist = gsub('\\.','-', genlist)
+    targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+    result[pathway] = t(targetScore)
+    df_meta[pathway] = t(targetScore)
+    
+  }
+    
+}
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+#plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+#                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+#                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_newgenelist_MHCII_jan24.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_newgenelist_MHCII_jan24.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+
+```
+
+
+```{r}
+### oct 05 gene sets
+
+targetlist = c(
+  
+  'HALLMARK_INFLAMMATORY_RESPONSE',
+  'HALLMARK_INTERFERON_GAMMA_RESPONSE',
+  'HALLMARK_INTERFERON_ALPHA_RESPONSE',
+  'HALLMARK_ANGIOGENESIS',
+  'GOBP_REGULATION_OF_T_CELL_COSTIMULATION',
+  'REACTOME_CD28_CO_STIMULATION',
+  'REACTOME_COSTIMULATION_BY_THE_CD28_FAMILY',
+  'GOBP_LYMPHOCYTE_COSTIMULATION',
+  'GOBP_RESPONSE_TO_VIRUS'
+
+)
+
+
+## read all input targets
+library(readxl)
+#targetsheet = readxl::read_excel('../data/Fig_6_genes.xlsx', sheet = 'TME_remodeling')
+
+n = length(targetlist)
+result = df_meta
+
+#n = 3
+for (i in c(1:n)){
+  
+ # this case is msigdb
+    
+    #gmt_file_match = gmt_file$genesets[str_detect(gmt_file$geneset.names, 'ANGIOGENESIS')]
+  pathway =  targetlist[i]#as.character(targetsheet[i,'Pathway'])
+  gmt_file_match = unlist(gmt_file$genesets[gmt_file$geneset.names ==  pathway])
+  gmt_file_match_im = unlist(gmt_file_imm$genesets[gmt_file_imm$geneset.names ==  pathway]) 
+  gmt_file_match_cgp = unlist(gmt_file_cgp$genesets[gmt_file_cgp$geneset.names ==  pathway]) 
+  gmt_file_match_hall = unlist(gmt_file_hall$genesets[gmt_file_hall$geneset.names ==  pathway]) 
+
+  genlist = c(gmt_file_match, gmt_file_match_im, gmt_file_match_cgp, gmt_file_match_hall)
+    # incase it is in immune
+    #print(c(length(genlist), pathway))
+
+  targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+  result[pathway] = t(targetScore)
+  df_meta[pathway] = t(targetScore)
+    
+}
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+#plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+#                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+#                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_newgenelist_patch3_jan24.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_newgenelist_patch3_jan24.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+
+df
+```
+
+
+
+
+```{r}
+### oct 06 gene sets
+
+targetlist = c(
+  
+  'GOBP_CHRONIC_INFLAMMATORY_RESPONSE',
+  'GOBP_NEGATIVE_REGULATION_OF_CHRONIC_INFLAMMATORY_RESPONSE',
+  'GOBP_REGULATION_OF_CHRONIC_INFLAMMATORY_RESPONSE',
+  'HP_CHRONIC_INFECTION',
+  'HALLMARK_INFLAMMATORY_RESPONSE'
+
+)
+
+
+## read all input targets
+library(readxl)
+#targetsheet = readxl::read_excel('../data/Fig_6_genes.xlsx', sheet = 'TME_remodeling')
+
+n = length(targetlist)
+result = df_meta
+
+#n = 3
+for (i in c(1:n)){
+  
+ # this case is msigdb
+    
+    #gmt_file_match = gmt_file$genesets[str_detect(gmt_file$geneset.names, 'ANGIOGENESIS')]
+  pathway =  targetlist[i]#as.character(targetsheet[i,'Pathway'])
+  gmt_file_match = unlist(gmt_file$genesets[gmt_file$geneset.names ==  pathway])
+  gmt_file_match_im = unlist(gmt_file_imm$genesets[gmt_file_imm$geneset.names ==  pathway]) 
+  gmt_file_match_cgp = unlist(gmt_file_cgp$genesets[gmt_file_cgp$geneset.names ==  pathway]) 
+  gmt_file_match_hall = unlist(gmt_file_hall$genesets[gmt_file_hall$geneset.names ==  pathway])
+  gmt_file_match_hp = unlist(gmt_file_hp$genesets[gmt_file_hp$geneset.names ==  pathway])
+
+  genlist = c(gmt_file_match, gmt_file_match_im, gmt_file_match_cgp, gmt_file_match_hall, gmt_file_match_hp)
+    # incase it is in immune
+    #print(c(length(genlist), pathway))
+
+  targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+  result[pathway] = t(targetScore)
+  df_meta[pathway] = t(targetScore)
+    
+}
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+#plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+#                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+#                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+
+plotdf = plotdf[c('pos_CD8mem', 'pos_CD8naive', 'pos_CD4mem', 'pos_CD4naive',
+                  'neg_CD8mem', 'neg_CD8naive', 'neg_CD4mem', 'neg_CD4naive',
+                   'pos_Tumor', 'neg_Tumor', 'pos_Other', 'neg_Other'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_newgenelist_p3_jan24.pdf",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_newgenelist_p3_jan24.svg",height = 15, width = 10)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+```
+
+
+############
+
+
+```{r}
+## get target
+showdf = read.csv('../data/figure6_show_ - Sheet1.csv')
+showdf = subset(showdf, showdf$Show.in.fig. == 'Y')
+targets = showdf$Name
+
+df_meta_presaved = df_meta
+df_meta_presaved_sub = df_meta_presaved[,colnames(df_meta_presaved) %in% targets]
+df_meta_presaved_sub_meta = cbind(df_meta_presaved_sub, df_meta_presaved[,c(1:14)])
+
+write.csv(df_meta_presaved_sub_meta, '../result/df_meta_scores_updated_showVer_jan24.csv')
+write.csv(df_meta, '../result/df_meta_scores_updated_FullVer_jan24.csv')
+```
+
+
+################ get treg related stuff
+
+
+```{r}
+reg = c('IKZF2',
+'FOXP3',
+'CCR4',
+'ENTPD1',
+'IL2RA')
+
+n = length(reg)
+result = df_meta
+
+targetScore=gsva(t(df),list(reg),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result['top5_treg_genes'] = t(targetScore)
+
+##### then try 	GSE15659_TREG_VS_TCONV_UP
+pathway = 'GSE15659_TREG_VS_TCONV_UP' 
+
+gmt_file_match_im = unlist(gmt_file_imm$genesets[gmt_file_imm$geneset.names ==  pathway]) 
+genlist = gmt_file_match_im
+targetScore=gsva(t(df),list(genlist),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result[pathway] = t(targetScore)
+
+
+
+### finished all calculation, start plotting
+start = 14
+end = ncol(result)
+
+result[,c(start:end)] = scale(result[,c(start:end)])
+result_temp  = result[,c(6,9,start:end)]
+result_temp %>% group_by(EBV, segment) %>% summarise_all(mean) -> plotdf
+
+plotdf = as.data.frame(plotdf)
+row_n = paste0(plotdf$EBV, '_', plotdf$segment )
+plotdf = as.matrix(plotdf[,c(-1, -2)])
+rownames(plotdf) = row_n
+
+plotdf = plotdf[c('pos_CD4mem', 'neg_CD4mem', 'pos_CD4naive', 'neg_CD4naive',
+                  'pos_CD8mem', 'neg_CD8mem', 'pos_CD8naive', 'neg_CD8naive',
+                  'pos_Other', 'neg_Other', 'pos_Tumor', 'neg_Tumor'),]
+
+## capping
+plotdf[plotdf > 0.4] = 0.4
+plotdf[plotdf < -0.4] = -0.4
+
+## plot with pigengene
+library(pheatmap)
+
+pdf(file="../plots/fig6_updated_treg.pdf",height = 15, width = 5)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+svg(file="../plots/fig6_updated_treg.svg",height = 15, width = 5)
+pheatmap(plotdf, cluster_rows=FALSE,
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50),
+         breaksList = seq(-0.4, 0.4, by = 0.025))
+dev.off()
+
+```
+
+### Figure 6D = circos plots
+
+```{r}
+library(standR)
+library(Seurat)
+library(ggplot2)
+library(edgeR)
+library(limma)
+library(qs)
+library(reshape2)
+library(circlize)
+library(igraph)
+library(patchwork)
+library(Hmisc)
+library(hash)
+library(tidyverse)
+library(ggsci)
+library(gtools)
+library(ComplexHeatmap)
+```
+
+```{r}
+# example code
+setwd("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Raw Data/batch effect correction/")
+
+# # read meta
+meta_df <- read.csv("MetaData_CT.csv",row.names = 1)
+
+# circos plot
+my.genelist <- qread("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/Pathway_manual/my.genelist_pathway.qsave")
+my.pathway_score1 <- read.csv("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/df_meta_scores_updated_FullVer_jan24_previous_missing.csv")
+my.pathway_score2 <- read.csv("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/df_meta_scores_updated_FullVer_jan24.csv")
+my.pathway_score3 <- read.csv("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/df_meta_scores_updated_showVer_jan24.csv")
+my.pathway_score4 <- read.csv("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/df_meta_scores_additional_exh_prog_term_jan24.csv")
+colnames(my.pathway_score4)[c(15,16)] <- c("Progenitor_Tex","Terminal_Tex")
+
+identical(my.pathway_score4$Sample_ID, my.pathway_score3$Sample_ID)
+
+my.pathway_score <- cbind.data.frame(my.pathway_score2,my.pathway_score1[,
+                                                                         c("GOBP_RESPONSE_TO_VIRUS",
+                                                                           "GOBP_ANTIVIRAL_INNATE_IMMUNE_RESPONSE",
+                                                                           "REACTOME_OAS_ANTIVIRAL_RESPONSE",
+                                                                           "GOBP_REGULATION_OF_CHRONIC_INFLAMMATORY_RESPONSE",
+                                                                           "HALLMARK_INTERFERON_ALPHA_RESPONSE",
+                                                                           "HALLMARK_INTERFERON_GAMMA_RESPONSE")],
+                                     my.pathway_score4[,c("Progenitor_Tex","Terminal_Tex")])
+my.corrected_exp <- read.csv("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/../Raw Data/batch effect correction/EBV_chl_batchcorrected-CPM-nNCGH_1500-K_11.csv",
+                             row.names = 1,check.names = F)
+rownames(my.pathway_score) <- my.pathway_score$Sample_ID
+identical(rownames(my.pathway_score),rownames(meta_df))
+identical(rownames(my.pathway_score),colnames(my.corrected_exp))
+# circos plot for anti viral
+# antiviral_gene <- unique(unlist(my.genelist$Gene[my.genelist$CAT2 == "AntiViral Responses"]))
+# antiviral_pathway <- my.genelist[my.genelist$CAT2 == "AntiViral Responses",c("names","CAT1","CAT2","Gene")]
+# TcellDysfunction_pathway <- my.genelist[my.genelist$CAT2 == "T cell dysfunction",c("names","CAT1","CAT2","Gene")]
+
+
+# match pathway cat
+
+Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", condition = "EBV+", save.path = "/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/out/",...){
+  EBVp_idx <- meta_df$EBV=="pos" 
+  cell_idx <- meta_df$segment == cell_type
+  # check pathway name
+  intersect(my.genelist$names,colnames(my.pathway_score))
+  setdiff(my.genelist$names,colnames(my.pathway_score))
+  # select top gene for each pathway
+  n_pathway <- nrow(my.genelist)
+  intersect.g <- intersect(unique(unlist(my.genelist$Gene)),rownames(my.corrected_exp))
+  n_gene <- length(intersect.g)
+  # NA matrix
+  Coef_mat.p <- Coef_mat.n <- matrix(rep(NA,n_pathway*n_gene),nrow = n_gene)
+  Pval_mat.p <- Pval_mat.n <- matrix(rep(NA,n_pathway*n_gene),nrow = n_gene)
+  colnames(Coef_mat.p) <- colnames(Pval_mat.p) <- colnames(Coef_mat.n) <- colnames(Pval_mat.n) <- my.genelist$names
+  rownames(Coef_mat.p) <- rownames(Pval_mat.p) <- rownames(Coef_mat.n) <- rownames(Pval_mat.n) <- intersect.g
+  for ( i in seq_len(n_pathway)){
+    tmp.pathway <- my.genelist$names[i]
+    tmp.pathway
+    tmp.pathway_score <- my.pathway_score[,tmp.pathway]
+    tmp.genelist <- unlist(my.genelist$Gene[i])
+    tmp.genelist <- intersect(tmp.genelist,intersect.g)
+    for (j in 1:length(tmp.genelist)){
+      tmp_exp <- my.corrected_exp[tmp.genelist[j],]
+      correlation_gene_EBVp.test <- cor.test(tmp.pathway_score[EBVp_idx&cell_idx],as.numeric(tmp_exp[EBVp_idx&cell_idx]),method = "spearman")
+      correlation_gene_EBVp.test.pvalue <- correlation_gene_EBVp.test$p.value
+      correlation_gene_EBVp.test.coef <- correlation_gene_EBVp.test$estimate
+      correlation_gene_EBVn.test <- cor.test(tmp.pathway_score[!EBVp_idx & cell_idx],as.numeric(tmp_exp[!EBVp_idx & cell_idx]),method = "spearman")
+      correlation_gene_EBVn.test.pvalue <- correlation_gene_EBVn.test$p.value
+      correlation_gene_EBVn.test.coef <- correlation_gene_EBVn.test$estimate
+      Coef_mat.n[tmp.genelist[j],tmp.pathway] <- correlation_gene_EBVn.test.coef
+      Pval_mat.n[tmp.genelist[j],tmp.pathway] <- correlation_gene_EBVn.test.pvalue
+      Coef_mat.p[tmp.genelist[j],tmp.pathway] <- correlation_gene_EBVp.test.coef
+      Pval_mat.p[tmp.genelist[j],tmp.pathway] <- correlation_gene_EBVp.test.pvalue
+    }
+  }
+  
+  Coef_mat.n.filter <- Coef_mat.n
+  Coef_mat.n.filter[Pval_mat.n > 0.05] <- NA
+  Coef_mat.p.filter <- Coef_mat.p
+  Coef_mat.p.filter[Pval_mat.p > 0.05] <- NA
+  
+  # Convert the matrix to a data frame (or use as.data.frame.matrix if necessary)
+  Coef_mat.n.filter<- as.data.frame(Coef_mat.n.filter)
+  Coef_mat.p.filter<- as.data.frame(Coef_mat.p.filter)
+  # Add row names as a new column in the data frame
+  Coef_mat.n.filter$Gene <- row.names(Coef_mat.n.filter)
+  Coef_mat.p.filter$Gene <- row.names(Coef_mat.p.filter)
+  # Melt the data frame into a long format
+  Coef_df.n.filter <- melt(Coef_mat.n.filter, id.vars = "Gene", variable.name = "Pathway", value.name = "Score")
+  Coef_df.n.filter$condition <- "EBV_neg"
+  Coef_df.n.filter$G2P <- paste0(Coef_df.n.filter$Gene,"_",Coef_df.n.filter$Pathway)
+  Coef_df.n.filter <- Coef_df.n.filter[!is.na(Coef_df.n.filter$Score),]
+  Coef_df.p.filter <- melt(Coef_mat.p.filter, id.vars = "Gene", variable.name = "Pathway", value.name = "Score")
+  Coef_df.p.filter$condition <- "EBV_pos"
+  Coef_df.p.filter$G2P <- paste0(Coef_df.p.filter$Gene,"_",Coef_df.p.filter$Pathway)
+  Coef_df.p.filter <- Coef_df.p.filter[!is.na(Coef_df.p.filter$Score),]
+  
+  # find consistent gene in pos and neg 
+  intersect.g2p <- unique(intersect(Coef_df.n.filter$G2P,Coef_df.p.filter$G2P))
+  Coef_df.n.filter.isct <- Coef_df.n.filter[match(intersect.g2p, Coef_df.n.filter$G2P),]
+  Coef_df.p.filter.isct <- Coef_df.p.filter[match(intersect.g2p, Coef_df.p.filter$G2P),]
+  
+  # cal differecne of pos and neg and give a rank
+  diff_coef <- abs(Coef_df.n.filter.isct$Score - Coef_df.p.filter.isct$Score)
+  diff_coef[order(diff_coef,decreasing = T)]
+  Coef_df.n.filter.isct <- Coef_df.n.filter.isct[order(diff_coef,decreasing = T),]
+  Coef_df.p.filter.isct <- Coef_df.p.filter.isct[order(diff_coef,decreasing = T),]
+  
+  # Table1-sector and node information, set cut off 
+  df_p <- as.data.frame(Coef_df.p.filter.isct[diff_coef[order(diff_coef,decreasing = T)] > 0.15,])
+  df_n <- as.data.frame(Coef_df.n.filter.isct[diff_coef[order(diff_coef,decreasing = T)] > 0.15,])
+  colnames(df_p) <- c("Gene","Pathway","Score","condition","G2P")
+  colnames(df_n) <- c("Gene","Pathway","Score","condition","G2P")
+  
+  joint_pathway_name <- my.genelist[,c("names","CAT1","CAT2")]
+  colnames(joint_pathway_name)[1] <- "Pathway"
+  # add meta information
+  df_p <- left_join(df_p,joint_pathway_name, by = "Pathway")
+  df_n <- left_join(df_n,joint_pathway_name, by = "Pathway")
+  
+  
+  order_gene <- order(df_p$Score, df_p$CAT2, df_p$CAT1,decreasing = T)
+  
+  
+  if(condition == "EBV+"){
+    df_in <- df_p[order_gene,]
+  }
+  if(condition == "EBV-"){
+    df_in <- df_n[order_gene,]
+  }
+  
+  if(pathways == "T cell dysfunction"){
+    df_in <- df_in[df_in$CAT2 == "T cell dysfunction",]
+  }else if (pathways == "AntiViral Responses"){
+    df_in <- df_in[df_in$CAT2 == "AntiViral Responses",]
+  }else if (pathways == "both"){
+    df_in <- df_in
+  }
+  # df_in <- df_in[order(df_in$CAT2, df_in$CAT1, df_in$Pathway),]
+  # df <- df %>%
+  #   #unite(GenePathway, Gene, Pathway, sep = "__") %>% 
+  #   dplyr::select(-X, -condition)
+  
+  # Create a combined identifier for genes and pathways to create unique sectors
+  genes <- df_in$Gene #paste0("Gene_", df$Gene)
+  pathways <- df_in$CAT1 #paste0("Pathway_", df$Pathway)
+  unique_identifiers <- union(genes, pathways)
+  
+  # Create an empty adjacency matrix
+  adj_matrix <- matrix(0, nrow = length(unique_identifiers), ncol = length(unique_identifiers))
+  rownames(adj_matrix) <- colnames(adj_matrix) <- unique_identifiers
+  
+  # Fill the adjacency matrix with scores
+  for (i in 1:nrow(df_in)) {
+    gene <- df_in$Gene[i]#paste0("Gene_", df$Gene[i])
+    pathway <- df_in$CAT1[i] #paste0("Pathway_", df$Pathway[i])
+    adj_matrix[gene, pathway] <- df_in$Score[i]
+    adj_matrix[pathway, gene] <- df_in$Score[i] # because the plot is undirected
+  }
+  
+  # Create the graph object
+  g <- graph.adjacency(adj_matrix, weighted = TRUE, mode = "undirected")
+  
+  # Set up color palette
+  col_fun <- colorRamp2(quantile(E(g)$weight, probs = 0:4/4), c("#FFFDE7", "#FF5722", "#FFC107", "#4CAF50", "#009688"))
+  
+  table(df_in$CAT1)
+  
+  graph_module <- df_in %>%
+    mutate(color = as_factor(CAT1)) %>% 
+    mutate(color = fct_recode(color, 
+                              "#357ebdff" = "Binding to MHC Class I",
+                              "#7E6148FF" = "Cytotoxic Downregulation",
+                              "#4DBBD5FF" = "Cytotoxic Upregulation",
+                              "#EEA236FF" = "IFN Production",
+                              "#FF5722" = "IFN Response",
+                              "#4CAF50" = "Inflammation",
+                              "#009688" = "Innate Response",
+                              "#f778ca"= "MHC Class I",
+                              "#768A95"= "Exhaustion State"))
+  
+  # filter graph by weights
+  g <- graph.adjacency(as.matrix(adj_matrix), weighted = T)
+  
+  raw_edges <-  as.data.frame(cbind(get.edgelist(g), E(g)$weight)) %>%
+    mutate(
+      V1 = gsub('\\.', '-', V1),
+      V2 = gsub('\\.', '-', V2),
+      V3 = as.numeric(V3),
+      V4 = 1
+    )
+  edges <- raw_edges[1:(nrow(raw_edges)/2),] %>%
+    arrange(V3)
+  
+  # Normalize the weight score to quantiles
+  # quartiles_weight <- quantcut(edges$V3, 4)
+  # levels(quartiles_weight) <- c(1:4)
+  # edges$V3 <- as.integer(quartiles_weight)
+  
+  
+  nodes <-  unique(c(edges$V1, edges$V2))
+  
+  sectors <- unique(raw_edges$V1)
+  
+  # diagram colors
+  grid_col <- graph_module %>%
+    dplyr::filter(Gene %in% nodes) %>% 
+    dplyr::select(Gene, color) %>%
+    mutate(color = as.character(color)) %>%
+    deframe()
+  
+  #https://vuetifyjs.com/en/styles/colors/#material-colors
+  # col_fun = colorRamp2(c(min(edges$V3),0,max(edges$V3)), c("#ECE23D","black","#A25292"),transparency = 0)
+  min_color_val <- round(min(c(df_p$Score,df_n$Score)),1)
+  max_color_val <- round(max(c(df_p$Score,df_n$Score)),1)
+  # col_fun = colorRamp2(c(min_color_val,0,
+  #                        max_color_val), c("#A25292","black","#ECE23D"),transparency = 0)
+  # col_fun = colorRamp2(c(min_color_val,0,
+  #                        max_color_val), c("#6992FF","white","#FF3BC9"),transparency = 0)
+  col_fun = colorRamp2(c(min_color_val,0,
+                         max_color_val), c("#5a8fbc","white","#d37c6c"),transparency = 0)
+  
+  png(
+    file.path(save.path,paste0(cell_type,"_",condition,"_Circos.png")),
+    width = 3200,
+    height = 3200,
+    res = 300
+  )
+  # svg(
+  #   file.path(save.path,paste0(cell_type,"_",condition,"_Circos.svg")),
+  #   width = 15,
+  #   height = 15
+  # )
+  
+  par(bg = NA)
+  circos.par(cell.padding = c(0, 0, 0, 0), track.margin = c(-0.15,0.2),circle.margin = c(0.1,0.8,0.1,0.2))
+  circos.initialize(sectors, xlim = c(0, 1))
+  circos.trackPlotRegion(ylim = c(0, 1), track.height = 0.05, bg.border = NA)
+  
+  # we go back to the first track and customize sector labels
+  circos.track(
+    track.index = 1,
+    panel.fun = function(x, y) {
+      sector.name = get.cell.meta.data("sector.index")
+      xlim = get.cell.meta.data("xlim")
+      this_node_text_color <- graph_module %>%
+        dplyr::filter(CAT1 == sector.name) %>%
+        pull(color) %>%
+        as.character()
+      
+      if(length(this_node_text_color) == 0){
+        this_node_text_color <- "#000000"
+      }
+      
+      circos.rect(
+        xlim[1],
+        0,
+        xlim[2],
+        1,
+        col = this_node_text_color,
+        border = NA
+      )
+      
+      circos.text(
+        mean(xlim),
+        2,
+        CELL_META$sector.index,
+        facing = "clockwise",
+        niceFacing = TRUE,
+        adj = c(0.05, 0.5),cex = 1.7,
+        col= this_node_text_color
+      )
+    },
+    bg.border = NA
+  ) 
+  
+  for (i in seq_len(nrow(edges))) {
+    link <- edges[i,]
+    circos.link(link[[1]],
+                c(0.25,0.75),
+                link[[2]],
+                c(0.45,0.55),
+                col = col_fun(link[[3]]),
+                border = NA)
+  }
+  circos.clear()
+  dev.off()
+  png(
+    file.path(save.path,paste0(cell_type,"_legend.png")),
+    width = 1000,
+    height = 2000,
+    res = 300)
+  plot.new()
+  par(bg = NA,mar = c(1, 4, 1, 4) + 0.1)
+  
+  
+  values <- seq(-1, 1, length.out = 100)
+  
+  color_values <- col_fun(values)
+  
+  # Plotting
+  color_matrix <- matrix(values, ncol = 1)
+  min_color_val_1 <- round(min(c(df_p$Score,df_n$Score)),1)-0.1
+  max_color_val_1 <- round(max(c(df_p$Score,df_n$Score)),1)+0.1
+  image(1, values, t(color_matrix), 
+        col = color_values, xlab = "", ylab = "", xaxt = "n", bty = "n", yaxt = "n", ann = FALSE)
+  axis(4, at = c(-1,0, 1), 
+       labels = c(min_color_val_1,0, max_color_val_1), 
+       las=1,cex.axis=3)
+  #circos.clear()
+  dev.off()
+  
+  print("done")
+}
+
+# CD4mem CD4naive   CD8mem CD8naive    Other    Tumor
+# EBV+ EBV-
+for (i in c("Other", "Tumor")){
+  for (j in c("EBV+","EBV-")){
+    Circo_func(cell_type = i,pathways = "AntiViral Responses",condition = j)
+    print(i)
+  }
+}
+
+# CD4mem CD4naive   CD8mem CD8naive    Other    Tumor
+# EBV+ EBV-
+for (i in c("CD4mem", "CD4naive",   "CD8mem", "CD8naive")){
+  for (j in c("EBV+","EBV-")){
+    Circo_func(cell_type = i,pathways = "both", condition = j)
+    print(i)
+  }
+}
+```
+
+

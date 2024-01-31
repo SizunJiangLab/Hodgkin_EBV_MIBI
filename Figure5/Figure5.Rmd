@@ -1,0 +1,475 @@
+---
+title: "Figure5"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+library(GSVA)
+library(Seurat)
+```
+
+### DATA
+
+```{r}
+df = read.csv('EBV_chl_batchcorrected-CPM-nNCGH_1500-K_11.csv') # row as sample column as features
+df = t(df)
+df = as.data.frame(df)
+colnames(df) = df[1,]
+df = df[-1,]
+rownames(df) = gsub('\\.', '-', rownames(df))
+
+# read in the meta data
+meta1 = read.csv('../result/ebv_chl_meta.csv')
+meta_ebv = meta1[match(rownames(df), meta1$Sample_ID),]
+meta_ebv <- na.omit(meta_ebv)
+meta = meta_ebv
+
+## need to remove some samples since no counts
+sampname = rownames(df)
+meta = meta[meta$Sample_ID %in% sampname,]
+
+#### subset
+sampnametarget = meta$Sample_ID[meta$EBV != 'ons']# remove tonsil
+df = df[match(sampnametarget, sampname),]
+df_meta = meta[match(sampnametarget, meta$Sample_ID),]
+
+# add patient information??
+df_meta$patient = str_sub(df_meta$roi, start = 3, end = -4)
+df_meta$patient = gsub('\\.[0-9]', '', df_meta$patient)
+
+## add ROI_num
+df_meta$ROI_num = str_sub(df_meta$roi, start = 3, end = -2)
+df_meta$T_ind = 'non-T'
+df_meta$T_ind[df_meta$segment %in% c('CD4naive', 'CD4mem', 'CD8naive', 'CD8mem')] = 'T'
+df_meta$Tu_ind = 'non-Tu'
+df_meta$Tu_ind[df_meta$segment %in% c('Tumor')] = 'Tumor'
+
+
+df2 <- mutate_all(df, function(x) as.numeric(as.character(x)))
+df = df2
+
+df_meta$EBV = factor(df_meta$EBV, levels = c("pos", "neg"))
+```
+
+### Figure 5C = celltype heatmap
+
+```{r}
+ebv_obj <- CreateSeuratObject(counts = t(df))
+SetAssayData(object = ebv_obj, slot = "data", new.data = t(df)) # dont need to do addtional norm steps
+ebv_obj = ScaleData(ebv_obj)
+Idents(ebv_obj) = as.factor(df_meta$segment)
+levels(ebv_obj) = c('CD4mem', 'CD4naive', 'CD8mem', 'CD8naive', 'Other', 'Tumor')
+ebv.markers <- FindAllMarkers(ebv_obj, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.025)
+
+# top genes??
+ebv.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top
+
+pp = DoHeatmap(ebv_obj, features = top$gene, disp.min = -1, disp.max = 1) +
+  scale_fill_gradientn(colors = c("blue", "white", "red")) #+ NoLegend()
+ggsave('../plots/celltype_specific_dsp_heatmap_top10_v2.png', height = 8, width = 8)
+ggsave('../plots/celltype_specific_dsp_heatmap_top10_v2.svg', height = 8, width = 8)
+pp
+
+# manually add CD30 
+targets = unique(top$gene)
+targets = unlist(list(targets, 'TNFRSF8'))
+df_target = as.data.frame(scale(df[,targets]))
+df_target$segment = df_meta$segment
+df_target %>% group_by(segment) %>% summarise_all(mean) -> df_tar_sum
+tro = df_tar_sum$segment
+df_tar_sum$segment = NULL
+df_tar_sum = as.matrix(df_tar_sum)
+rownames(df_tar_sum) = tro
+
+## capping
+df_tar_sum[df_tar_sum > 0.4] = 0.4
+df_tar_sum[df_tar_sum < -0.4] = -0.4
+
+library(pheatmap)
+#pheatmap(plot_test)
+pdf(file="../plots/celltype_specific_dsp_heatmap_top10_v4_jan24_addcd30.pdf",height = 5, width = 10)
+pheatmap(df_tar_sum, cluster_rows=FALSE, 
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50))
+dev.off()
+
+svg(file="../plots/celltype_specific_dsp_heatmap_top10_v4_jan24_addcd30.svg",height = 5, width = 10)
+pheatmap(df_tar_sum, cluster_rows=FALSE, 
+         color=colorRampPalette(c("#FF00FF", "#000000", "#FFFF00"))(50))
+dev.off()
+```
+
+### Figure 5D = mem/naive volcano plots
+
+```{r}
+### compare within EBV negative
+
+df_sub = subset(df, df_meta$T_ind == 'T' & df_meta$EBV == 'neg')
+dfmeta_sub = subset(df_meta, df_meta$T_ind == 'T'& df_meta$EBV == 'neg')
+
+library(limma)
+
+limma_df=t(df_sub)
+list <- c(dfmeta_sub$mem_naive) %>% factor(., levels = c("memory","naive"), ordered = F)
+list <- model.matrix(~factor(list)+0)
+colnames(list) <- c("memory","naive")
+df.fit <- lmFit(limma_df, list) 
+## deg start
+df.matrix <- makeContrasts(memory - naive , levels = list)
+fit <- contrasts.fit(df.fit, df.matrix)
+fit <- eBayes(fit)
+tempOutput <- topTable(fit,n = Inf, adjust = "fdr")
+
+nrDEG = na.omit(tempOutput)
+diffsig <- nrDEG  
+
+# cd45 in small intestine
+results = diffsig
+results$Gene = rownames(results)
+#results$Estimate = -1 * results$Estimate # reverse direction
+results$Color <- "NS or FC < 0.5"
+results$Color[results$P.Value < 0.05] <- "P < 0.05"
+results$Color[((results$logFC) < -0.1) & (results$P.Value < 0.05)] <- "FC < -0.5"
+results$Color[((results$logFC) > 0.1) & (results$P.Value < 0.05)] <- "FC > 0.5"
+results$Color <- factor(results$Color,
+                        levels = c("NS or FC < 0.5", "P < 0.05",
+                                   "FC < -0.5", "FC > 0.5"))
+
+# pick top genes for either side of volcano to label
+# order genes for convenience:
+results$invert_P <- (-log10(results$P.Value)) * sign(results$logFC)
+top_g <- c()
+
+top_g <- c(top_g,
+            results[, 'Gene'][
+                order(results[, 'logFC'], decreasing = TRUE)[1:15]],
+            results[, 'Gene'][
+                order(results[, 'logFC'], decreasing = FALSE)[1:15]])
+
+top_g <- unique(top_g)
+results <- results[, -1*ncol(results)] # remove invert_P from matrix
+
+library(ggplot2)
+# Graph results
+p = ggplot(results,
+       aes(x = logFC, y = -log10(P.Value),
+           color = Color, label = Gene)) +
+    geom_vline(xintercept = c(0.5, -0.5), lty = "dashed", lwd = 0.25) +
+    geom_hline(yintercept = -log10(0.05), lty = "dashed", lwd = 0.25) +
+    geom_point(size = 0.25) +
+    labs(x = "Log2FC",
+         y = "Significance, -log10(P)",
+         color = "Significance") +
+    scale_color_manual(values = c(`FC > 0.5` = "firebrick1",
+                                  `FC < -0.5` = "royalblue2",
+                                  `P < 0.05` = "orange2",
+                                  `NS or FC < 1` = "gray"),
+                       guide = guide_legend(override.aes = list(size = 2))) +
+    scale_y_continuous(expand = expansion(mult = c(0,0.05))) +
+    ggrepel::geom_text_repel(data = subset(results, Gene %in% top_g & results$P.Value < 0.05),
+                    size = 2.5, point.padding = 0.15, color = "black",
+                    min.segment.length = .1, box.padding = .2, lwd = 0.25, segment.size = 0.25,
+                    max.overlaps = 100) +
+    theme_classic(base_size = 4) +
+    theme(legend.position = "bottom") +
+    ggtitle('ebv- cells')
+ggsave('../plots/ebv-_memvsna_2024.png', height = 6, width = 7.2)
+ggsave('../plots/ebv-_memvsna_2024.svg', height = 3, width = 3.6)
+write.csv(diffsig, '../plots/ebv-_memvsna_2024.csv')
+p
+
+```
+
+```{r}
+### compare within EBV positive
+
+df_sub = subset(df, df_meta$T_ind == 'T' & df_meta$EBV == 'pos')
+dfmeta_sub = subset(df_meta, df_meta$T_ind == 'T'& df_meta$EBV == 'pos')
+
+library(limma)
+
+limma_df=t(df_sub)
+list <- c(dfmeta_sub$mem_naive) %>% factor(., levels = c("memory","naive"), ordered = F)
+list <- model.matrix(~factor(list)+0)
+colnames(list) <- c("memory","naive")
+df.fit <- lmFit(limma_df, list) 
+## deg start
+df.matrix <- makeContrasts(memory - naive , levels = list)
+fit <- contrasts.fit(df.fit, df.matrix)
+fit <- eBayes(fit)
+tempOutput <- topTable(fit,n = Inf, adjust = "fdr")
+
+nrDEG = na.omit(tempOutput)
+diffsig <- nrDEG  
+
+# cd45 in small intestine
+results = diffsig
+results$Gene = rownames(results)
+#results$Estimate = -1 * results$Estimate # reverse direction
+results$Color <- "NS or FC < 0.5"
+results$Color[results$P.Value < 0.05] <- "P < 0.05"
+results$Color[((results$logFC) < -0.1) & (results$P.Value < 0.05)] <- "FC < -0.5"
+results$Color[((results$logFC) > 0.1) & (results$P.Value < 0.05)] <- "FC > 0.5"
+results$Color <- factor(results$Color,
+                        levels = c("NS or FC < 0.5", "P < 0.05",
+                                   "FC < -0.5", "FC > 0.5"))
+
+# pick top genes for either side of volcano to label
+# order genes for convenience:
+results$invert_P <- (-log10(results$P.Value)) * sign(results$logFC)
+top_g <- c()
+
+top_g <- c(top_g,
+            results[, 'Gene'][
+                order(results[, 'logFC'], decreasing = TRUE)[1:15]],
+            results[, 'Gene'][
+                order(results[, 'logFC'], decreasing = FALSE)[1:15]])
+
+top_g <- unique(top_g)
+results <- results[, -1*ncol(results)] # remove invert_P from matrix
+
+library(ggplot2)
+# Graph results
+p = ggplot(results,
+       aes(x = logFC, y = -log10(P.Value),
+           color = Color, label = Gene)) +
+    geom_vline(xintercept = c(0.5, -0.5), lty = "dashed", lwd = 0.25) +
+    geom_hline(yintercept = -log10(0.05), lty = "dashed", lwd = 0.25) +
+    geom_point(size = 0.25) +
+    labs(x = "Log2FC",
+         y = "Significance, -log10(P)",
+         color = "Significance") +
+    scale_color_manual(values = c(`FC > 0.5` = "firebrick1",
+                                  `FC < -0.5` = "royalblue2",
+                                  `P < 0.05` = "orange2",
+                                  `NS or FC < 1` = "gray"),
+                       guide = guide_legend(override.aes = list(size = 2))) +
+    scale_y_continuous(expand = expansion(mult = c(0,0.05))) +
+    ggrepel::geom_text_repel(data = subset(results, Gene %in% top_g & results$P.Value < 0.05),
+                    size = 2.5, point.padding = 0.15, color = "black",
+                    min.segment.length = .1, box.padding = .2, lwd = 0.25, segment.size = 0.25,
+                    max.overlaps = 100) +
+    theme_classic(base_size = 4) +
+    theme(legend.position = "bottom") +
+    ggtitle('ebv+ cells')
+ggsave('../plots/ebv+_memvsna_2024.png', height = 6, width = 7.2)
+ggsave('../plots/ebv+_memvsna_2024.svg', height = 3, width = 3.6)
+write.csv(diffsig, '../plots/ebv+_memvsna_2024.csv')
+p
+```
+
+### Figure 5E = G2M score comparison violin plots
+
+```{r}
+library(Seurat)
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+# Create our Seurat object and complete the initalization steps
+ebv <- CreateSeuratObject(counts = t(df))
+ebv <- CellCycleScoring(ebv, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+```
+
+```{r}
+meta = ebv@meta.data
+tumor_df = subset(df, df_meta$EBV == 'pos' & df_meta$segment == 'Tumor')
+tumor_g2m = subset(meta, df_meta$EBV == 'pos' & df_meta$segment == 'Tumor')
+tumor_df$g2m = tumor_g2m$G2M.Score
+
+library(ggplot2)
+library(ggpubr)
+
+ggplot(data = tumor_df, aes(x = g2m, y = EBER1)) + geom_point() +
+  stat_smooth(method = "lm") +stat_cor()
+```
+
+```{r}
+ebvglist = c('EBER1', 'EBER2', 'LMP1', 'EBNA2', 'BALF1', 'BCRF1', 'BNLF2A', 'BNLF2B',
+             'BZLF1', 'RPMS1')
+i = 1
+for (ebv in ebvglist){
+  temp = tumor_df[,c('g2m', ebv)]
+  colnames(temp) = c('g2m', 'ebv_gene')
+  p = ggplot(data = temp, aes(x = g2m, y = ebv_gene)) + geom_point() +
+  stat_smooth(method = "lm") +stat_cor() + ylab(ebv)
+  assign(paste0('p',as.character(i)), p)
+  i = i + 1
+}
+library(patchwork)
+pall = wrap_plots(list(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10), ncol = 5)
+ggsave('../plots/g2m_all_ebv_genes.png', pall, width = 12, height = 3)
+```
+
+```{r}
+ggplot(data = tumor_df, aes(x = g2m, y = EBER2)) + geom_point() +
+  stat_smooth(method = "lm") +stat_cor()
+```
+```{r}
+ggplot(data = tumor_df, aes(x = g2m, y = BCRF1)) + geom_point() +
+  stat_smooth(method = "lm") +stat_cor()
+```
+```{r}
+ggplot(data = tumor_df, aes(x = g2m, y = BZLF1)) + geom_point() +
+  stat_smooth(method = "lm") +stat_cor()
+```
+
+```{r}
+tumor_df = subset(df, df_meta$segment == 'Tumor')
+tumor_g2m = subset(meta, df_meta$segment == 'Tumor')
+tumor_meta = subset(df_meta, df_meta$segment == 'Tumor')
+tumor_df$g2m = tumor_g2m$G2M.Score
+tumor_df$EBV = tumor_meta$EBV
+
+p1 = ggplot(data = tumor_df, aes(x=EBV, y=(g2m), fill = EBV)) + 
+  geom_violin(trim=FALSE)+
+  geom_boxplot(width=0.05, fill = 'white')+
+  theme_classic() + ggtitle('G2M score') + 
+  scale_fill_manual(values=c("#cf4528", "#00966d"))
+ggsave('../plots/jan8_g2m_violin.png', p1, width = 4, height = 4)
+ggsave('../plots/jan8_g2m_violin.svg', p1, width = 4, height = 4)
+p1
+```
+
+```{r}
+x = tumor_df[tumor_df$EBV == 'neg', 'g2m']
+y = tumor_df[tumor_df$EBV == 'pos', 'g2m']
+wt = wilcox.test(x, y, alternative = "two.sided")
+#pl = c(pl, wt$p.value)
+wt$p.value
+```
+
+### Figure 5F = receptor-ligand interaction score
+# LR analysis is done in python notebook, plots are generated here
+
+```{r}
+pacman::p_load(tidyverse, ktplots, SingleCellExperiment, ComplexHeatmap, reshape2)
+
+# DATA
+pvals <- read.delim('statistical_analysis_pvalues_01_08_2024_17:38:34.txt', check.names = F) %>%
+  dplyr::select(-contains('ons_'))
+means <- read.delim('statistical_analysis_means_01_08_2024_17:38:34.txt', check.names = F) %>%
+  dplyr::select(-contains('ons_'))
+decon <- read.delim('statistical_analysis_deconvoluted_01_08_2024_17:38:34.txt', check.names = F)
+signif_means <- read.delim('statistical_analysis_significant_means_01_08_2024_17:38:34.txt', check.names = F) %>%
+  dplyr::select(-contains('ons_')) %>%
+  dplyr::filter(if_any(13:84, ~!is.na(.))) # filter for only significant interactions in any interacting pair
+
+cell_interactions <- colnames(signif_means)[13:84]
+
+mdata <- read_csv('mdata.csv')
+counts <- read.csv('EBV_chl_batchcorrected-CPM-nNCGH_1500-K_11.csv', row.names = 1)
+names(counts) <- gsub('\\.', '-', names(counts))
+
+counts <- counts[, mdata$Cell] # reorder
+sce <- SingleCellExperiment(list(counts = counts), colData = DataFrame(celltype = mdata$cell_type))
+```
+
+```{r}
+custom_genesets <- list(chemokines = grep('^CXC|CCL|CCR|CX3|XCL|XCR', signif_means$interacting_pair, value = T),
+                        th1 = grep('IL2|IL12|IL18|IL27|IFNG|IL10|TNF$|TNF |LTA|LTB|STAT1|CCR5|CXCR3|IL12RB1|IFNGR1|TBX21|STAT4', signif_means$interacting_pair, value = T),
+                        th2 = grep('IL4|IL5|IL25|IL10|IL13|AREG|STAT6|GATA3|IL4R', signif_means$interacting_pair, value = T),
+                        th17 = grep('IL21|IL22|IL24|IL26|IL17A|IL17A|IL17F|IL17RA|IL10|RORC|RORA|STAT3|CCR4|CCR6|IL23RA|TGFB', signif_means$interacting_pair, value = T),
+                        stimulatory = grep('CD86|CD80|CD48|LILRB2|LILRB4|TNF|CD2|ICAM|SLAM|LT[AB]|NECTIN2|CD40|CD70|CD27|CD28|CD58|TSLP|PVR|CD44|CD55|CD[1-9]', signif_means$interacting_pair, value = T),
+                        exhaustion = grep('PDCD1|CD274|PDCD1LG2|LAG3|FGL1|CTLA4|CD80|CD86|CD96|PVR|TIGIT|NECTIN2|SLAMF4|CD244|HAVCR2|HAVR2|LGALS9|LEG9|CEACAM1|BTLA|TNFRSF14|CD160|SLAMF7|NKG2A|KLRC1|VISTA|VSIR|GI24', signif_means$interacting_pair, value = T),
+                        target_chemokines = grep('CXCR3|CXCL9|CXCL10|CXCL11|CCR4|CCL17|CCL22|CCR7|CCL19|CCL21', signif_means$interacting_pair, value = T))
+```
+
+```{r}
+library(ComplexHeatmap)
+
+set <- 'chemokines'
+celltype <- 'tumor'
+
+# for scaling mean expression
+scale_means <- function(x) {
+    (x - min(x))/(max(x) - min(x))
+}
+
+# subset and scale mean paired expression values
+all_values <- means %>%
+  dplyr::filter(interacting_pair %in% custom_genesets[[set]]) %>%
+  dplyr::select(interacting_pair, all_of(grep(celltype, cell_interactions, value = T, ignore.case = T))) %>%
+  column_to_rownames(var = 'interacting_pair') %>%
+  as.matrix()
+
+all_values <- apply(all_values, 1, scale_means) %>% t()
+
+# get significance from signif_means
+signif <- signif_means %>%
+  dplyr::filter(interacting_pair %in% custom_genesets[[set]]) %>%
+  dplyr::select(interacting_pair, all_of(grep(celltype, cell_interactions, value = T, ignore.case = T))) %>%
+  column_to_rownames(var = 'interacting_pair') %>%
+  as.matrix()
+
+signif <- signif[rownames(all_values), colnames(all_values), drop = F] # match row/col order
+signif <- ifelse(!is.na(signif), 1, NA) # set values to 1
+
+only_signif <- all_values * signif
+
+# reorder based on hclust
+od <- hclust(dist(all_values), method = 'complete')$order
+all_values <- all_values[od,]
+only_signif <- only_signif[od,]
+
+# complexheatmap annotations/colors
+ebv_annotation <- rep('empty', length(colnames(all_values)))
+ebv_annotation[grepl('\\bEBV\\+\\b', colnames(all_values))] <- 'EBV+'
+ebv_annotation[grepl('\\bEBV\\-\\b', colnames(all_values))] <- 'EBV-'
+
+ebv_colors <- c('EBV+' = '#D55E00', 'EBV-' = '#009E73')
+
+top_annotation <- HeatmapAnnotation(EBV_status = ebv_annotation,
+                                    col = list(EBV_status = ebv_colors),
+                                    show_legend = F,
+                                    show_annotation_name = F)
+
+col_fun <- circlize::colorRamp2(c(0, 1), c('#FFFFFF', '#C74132'))
+
+# draw heatmaps
+pdf(file = paste0('plots/all_values_', celltype, '_', set, '.pdf'), width = 8, height = 10)
+ht_plot <- Heatmap(all_values,
+                   name = 'scaled\nmeans',
+                   rect_gp = gpar(col = 'black', lwd = 1),
+                   row_title = '',
+                   row_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   column_title = '',
+                   column_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   col = col_fun,
+                   top_annotation = top_annotation,
+                   cluster_rows = F,
+                   cluster_columns = F,
+                   show_row_dend = F,
+                   show_column_dend = F,
+                   show_row_names = T,
+                   row_names_gp = grid::gpar(fontsize = 8, fontface = 'bold'),
+                   show_column_names = T,
+                   column_names_gp = grid::gpar(fontsize = 8, fontface = 'bold'))
+draw(ht_plot, padding = unit(c(50, 10, 10, 50), 'mm'))
+dev.off()
+
+pdf(file = paste0('plots/only_signif_', celltype, '_', set, '.pdf'), width = 8, height = 10)
+ht_plot <- Heatmap(only_signif,
+                   name = 'scaled\nmeans',
+                   rect_gp = gpar(col = 'black', lwd = 1),
+                   row_title = '',
+                   row_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   column_title = '',
+                   column_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   col = col_fun,
+                   top_annotation = top_annotation,
+                   cluster_rows = F,
+                   cluster_columns = F,
+                   show_row_dend = F,
+                   show_column_dend = F,
+                   show_row_names = T,
+                   row_names_gp = grid::gpar(fontsize = 8, fontface = 'bold'),
+                   show_column_names = T,
+                   column_names_gp = grid::gpar(fontsize = 8, fontface = 'bold'))
+draw(ht_plot, padding = unit(c(50, 10, 10, 50), 'mm'))
+dev.off()
+```
+
