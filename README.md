@@ -15,6 +15,7 @@ The following is an overview of the code in this repository. Please note that si
 | Figure4.rmd | Produces Figure 4B, 4C           |
 | Figure5/ | Contains scripts for ligand-receptor analysis and visualization |
 | Figure6.rmd | Produces Figure 6A, 6B, 6C, 6D |
-| Supplementary.rmd| Produces supplementary figures for Figure 2, 3, and 4|
-| multi_test_correction.R | Conducts all the statistical test in the paper and correct for multiple comparisons using Benjamini-Hochberg procedure |
+| Supplementary.rmd| Produces supplementary figures for Figures 2, 3, and 4|
+| multi_test_correction.R | Conducts all the statistical tests in the paper and corrects for multiple comparisons using the Benjamini-Hochberg procedure |
+|Batch effect correction and evaluation.R| This script is to adjust and assess data for batch effects based on GeoMX data|
 

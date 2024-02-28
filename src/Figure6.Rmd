@@ -1308,15 +1308,136 @@ library(tidyverse)
 library(ggsci)
 library(gtools)
 library(ComplexHeatmap)
+library(msigdb)
+library(GSEABase)
+library(dplyr)
 ```
+```{r}
+# download pathway term and genes
+# import database from gsea
+msigdb_hs <- getMsigdb(version = "7.5")
+listCollections(msigdb_hs)
+sc <- listSubCollections(msigdb_hs)
+gsc <- msigdb_hs %>% GeneSetCollection()
 
+
+# read pathway terms
+my.genelist <- read.csv("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/pathway.csv",header = F)
+colnames(my.genelist) <- "names"
+my.genelist <- rbind(my.genelist, "Progenitor_Tex","Terminal_Tex")
+my.genelist$CAT1 <- c("Innate Response","Innate Response","Innate Response",
+                      "Inflammation",
+                      "IFN Production","IFN Production",
+                      "IFN Response","IFN Response","IFN Response","IFN Response",
+                      "MHC Class I","MHC Class I","MHC Class I",
+                      "Binding to MHC Class I","Binding to MHC Class I","Binding to MHC Class I",
+                      rep("Cytotoxic Upregulation",8),
+                      rep("Cytotoxic Downregulation",7),
+                      rep("Dysfunction State",2))
+my.genelist$CAT2 <- c(rep("AntiViral Responses",13),
+                      rep("T cell dysfunction", 20))
+# change pathway name
+for (i in 1:nrow(my.genelist)){
+  tmp.term <- my.genelist$names[i]
+  res.check.term <- grep(tmp.term,names(gsc),value = T)
+  if(length(res.check.term)==0){print(paste("not res for__", tmp.term))}
+  if(length(res.check.term)==1){print(paste("1-to-1 match for__", tmp.term))}
+  if(length(res.check.term)>1){print(paste("1-to-many match for__", tmp.term))}
+}
+grep("GOBP_REGULATION_OF_CHRONIC_INFLAMMATORY_RESPONSE",names(gsc),value = T)
+my.genelist$names_revise <- c("GOBP_RESPONSE_TO_VIRUS",
+                              "GOBP_ANTIVIRAL_INNATE_IMMUNE_RESPONSE",
+                              "REACTOME_OAS_ANTIVIRAL_RESPONSE",
+                              "GOBP_REGULATION_OF_CHRONIC_INFLAMMATORY_RESPONSE",
+                              "GOBP_POSITIVE_REGULATION_OF_TYPE_I_INTERFERON_PRODUCTION",
+                              "manual:GOBP_POSITIVE_REGULATION_OF_TYPE_II_INTERFERON_PRODUCTION",
+                              "GOBP_RESPONSE_TO_TYPE_I_INTERFERON",
+                              "HALLMARK_INTERFERON_ALPHA_RESPONSE",
+                              "manual:GOBP_RESPONSE_TO_TYPE_II_INTERFERON",
+                              "HALLMARK_INTERFERON_GAMMA_RESPONSE",
+                              "GOBP_ANTIGEN_PROCESSING_AND_PRESENTATION_OF_PEPTIDE_ANTIGEN_VIA_MHC_CLASS_I",
+                              "GOCC_MHC_CLASS_I_PEPTIDE_LOADING_COMPLEX",
+                              "GOBP_MHC_CLASS_I_BIOSYNTHETIC_PROCESS",
+                              "GOMF_MHC_CLASS_I_PROTEIN_BINDING",
+                              "GOMF_MHC_CLASS_I_PROTEIN_COMPLEX_BINDING",
+                              "GOMF_MHC_CLASS_I_RECEPTOR_ACTIVITY",
+                              "GOBP_CYTOLYSIS",
+                              "GOBP_POSITIVE_REGULATION_OF_CELL_KILLING",
+                              "GOBP_NATURAL_KILLER_CELL_MEDIATED_IMMUNITY",
+                              "GOBP_LYMPHOCYTE_MEDIATED_IMMUNITY",
+                              "GOBP_LYMPHOCYTE_ACTIVATION",
+                              "GOBP_POSITIVE_REGULATION_OF_IMMUNE_EFFECTOR_PROCESS",
+                              "GOBP_T_CELL_MEDIATED_CYTOTOXICITY",
+                              "GOBP_POSITIVE_REGULATION_OF_DEFENSE_RESPONSE",
+                              "GOBP_NEGATIVE_REGULATION_OF_CELL_KILLING",
+                              "GOBP_NEGATIVE_REGULATION_OF_NATURAL_KILLER_CELL_MEDIATED_IMMUNITY",
+                              "GOBP_NEGATIVE_REGULATION_OF_LYMPHOCYTE_MEDIATED_IMMUNITY",
+                              "GOBP_NEGATIVE_REGULATION_OF_LYMPHOCYTE_ACTIVATION",
+                              "GOBP_NEGATIVE_REGULATION_OF_IMMUNE_EFFECTOR_PROCESS",
+                              "GOBP_NEGATIVE_REGULATION_OF_T_CELL_MEDIATED_CYTOTOXICITY",
+                              "GOBP_NEGATIVE_REGULATION_OF_DEFENSE_RESPONSE",
+                              "Progenitor_Tex",
+                              "Terminal_Tex")
+
+my.genelist_pathway <- list()
+for (i in 1:(nrow(my.genelist)-2)){
+  tmp.term <- my.genelist$names_revise[i]
+  if(grepl("manual",tmp.term)){
+    tmp.term <- gsub("manual:","",tmp.term)
+    tmp.gene <- read.table(paste0("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/Pathway_manual/",tmp.term,".v2023.2.Hs.grp"))$V1[-1]
+    my.genelist_pathway[[i]] <- tmp.gene
+    names(my.genelist_pathway)[length(my.genelist_pathway)] <- tmp.term
+  } else{
+    my.genelist_pathway[[i]] <- geneIds(msigdb_hs[[tmp.term]])
+    names(my.genelist_pathway)[length(my.genelist_pathway)] <- tmp.term
+  }
+}
+my.genelist_pathway$Progenitor_Tex <- c("CD28",
+                                        "SELL",
+                                        "IL7R",
+                                        "HIF1A",
+                                        "BACH2",
+                                        "ID3",
+                                        "TCF7",
+                                        "LEF1",
+                                        "SATB1",
+                                        "BCL6",
+                                        "CXCR5",
+                                        "CCR7",
+                                        "XCL1",
+                                        "CXCL10")
+  my.genelist_pathway$Terminal_Tex <- c("PDCD1",
+                                        "HAVCR2",
+                                        "CD244",
+                                        "ENTPD1",
+                                        "CD38",
+                                        "PTGFRN",
+                                        "TNFRSF9",
+                                        "IL2RB",
+                                        "IFNG",
+                                        "GZMA",
+                                        "GZMB",
+                                        "PRF1",
+                                        "TNFSF10",
+                                        "FASLG",
+                                        "ID2",
+                                        "PRDM1",
+                                        "CCL5",
+                                        "CCL4L2",
+                                        "CCL3",
+                                        "CSF1")
+# save res
+my.genelist$Gene <- my.genelist_pathway
+# qsave(my.genelist,file = "/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/Pathway_manual/my.genelist_pathway.qsave")
+```
 ```{r}
 # example code
 setwd("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Raw Data/batch effect correction/")
 
 # # read meta
 meta_df <- read.csv("MetaData_CT.csv",row.names = 1)
-
+target.gene <- read.csv("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/out/relevantgenes.csv",header = F,row.names  = 1)
+target.gene <- as.character(unlist(target.gene))
 # circos plot
 my.genelist <- qread("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/Pathway_manual/my.genelist_pathway.qsave")
 my.pathway_score1 <- read.csv("/bmbl_data/yuzhou/collaborative/Sizun_lab/EBV_project/Circosplot/df_meta_scores_updated_FullVer_jan24_previous_missing.csv")
@@ -1417,26 +1538,34 @@ Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", c
   Coef_df.p.filter.isct <- Coef_df.p.filter.isct[order(diff_coef,decreasing = T),]
   
   # Table1-sector and node information, set cut off 
-  df_p <- as.data.frame(Coef_df.p.filter.isct[diff_coef[order(diff_coef,decreasing = T)] > 0.15,])
-  df_n <- as.data.frame(Coef_df.n.filter.isct[diff_coef[order(diff_coef,decreasing = T)] > 0.15,])
+  df_p <- as.data.frame(Coef_df.p.filter.isct[diff_coef[order(diff_coef,decreasing = T)] >= 0.0,])
+  df_n <- as.data.frame(Coef_df.n.filter.isct[diff_coef[order(diff_coef,decreasing = T)] >= 0.0,])
   colnames(df_p) <- c("Gene","Pathway","Score","condition","G2P")
   colnames(df_n) <- c("Gene","Pathway","Score","condition","G2P")
-  
+  #
   joint_pathway_name <- my.genelist[,c("names","CAT1","CAT2")]
   colnames(joint_pathway_name)[1] <- "Pathway"
   # add meta information
   df_p <- left_join(df_p,joint_pathway_name, by = "Pathway")
   df_n <- left_join(df_n,joint_pathway_name, by = "Pathway")
-  
-  
+  # insert coef difference to show whole table
+  df_pn <- data.frame(Gene = df_p$Gene, Pathway = df_p$Pathway, 
+                      Diff_n_minus_p =df_n$Score - df_p$Score, coef_n = df_n$Score, 
+                      coef_p = df_p$Score, CAT1= df_n$CAT1, CAT2 = df_n$CAT2)
+  write.csv(df_pn,
+            file.path(save.path,paste0(cell_type,"_gene_information.csv")))
   order_gene <- order(df_p$Score, df_p$CAT2, df_p$CAT1,decreasing = T)
   
   
   if(condition == "EBV+"){
     df_in <- df_p[order_gene,]
+    # write.csv(df_in, 
+    #           file.path(save.path,paste0(cell_type,"_",condition,"_gene_information.csv")))
   }
   if(condition == "EBV-"){
     df_in <- df_n[order_gene,]
+    # write.csv(df_in, 
+    #           file.path(save.path,paste0(cell_type,"_",condition,"_gene_information.csv")))
   }
   
   if(pathways == "T cell dysfunction"){
@@ -1450,12 +1579,20 @@ Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", c
   # df <- df %>%
   #   #unite(GenePathway, Gene, Pathway, sep = "__") %>% 
   #   dplyr::select(-X, -condition)
-  
+  df_in <- df_in[df_in$Gene%in%target.gene,]
   # Create a combined identifier for genes and pathways to create unique sectors
   genes <- df_in$Gene #paste0("Gene_", df$Gene)
   pathways <- df_in$CAT1 #paste0("Pathway_", df$Pathway)
   unique_identifiers <- union(genes, pathways)
-  
+  # Exclude CD8 pathway from CD4 
+  if(grepl("CD8mem",cell_type)){
+    CD8name <- grep("LAG3",df_in$Gene)
+    df_in <- df_in[-c(CD8name),]
+  }
+  if(grepl("Tumor",cell_type)){
+    CD8name <- grep("SLAMF7",df_in$Gene)
+    df_in <- df_in[-c(CD8name),]
+  }
   # Create an empty adjacency matrix
   adj_matrix <- matrix(0, nrow = length(unique_identifiers), ncol = length(unique_identifiers))
   rownames(adj_matrix) <- colnames(adj_matrix) <- unique_identifiers
@@ -1487,7 +1624,7 @@ Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", c
                               "#4CAF50" = "Inflammation",
                               "#009688" = "Innate Response",
                               "#f778ca"= "MHC Class I",
-                              "#768A95"= "Exhaustion State"))
+                              "#768A95"= "Dysfunction State"))
   
   # filter graph by weights
   g <- graph.adjacency(as.matrix(adj_matrix), weighted = T)
@@ -1521,19 +1658,19 @@ Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", c
   
   #https://vuetifyjs.com/en/styles/colors/#material-colors
   # col_fun = colorRamp2(c(min(edges$V3),0,max(edges$V3)), c("#ECE23D","black","#A25292"),transparency = 0)
-  min_color_val <- round(min(c(df_p$Score,df_n$Score)),1)
-  max_color_val <- round(max(c(df_p$Score,df_n$Score)),1)
+  min_color_val <- round(min(c(df_p$Score,df_n$Score)),2)
+  max_color_val <- round(max(c(df_p$Score,df_n$Score)),2)
   # col_fun = colorRamp2(c(min_color_val,0,
   #                        max_color_val), c("#A25292","black","#ECE23D"),transparency = 0)
   # col_fun = colorRamp2(c(min_color_val,0,
   #                        max_color_val), c("#6992FF","white","#FF3BC9"),transparency = 0)
-  col_fun = colorRamp2(c(min_color_val,0,
-                         max_color_val), c("#5a8fbc","white","#d37c6c"),transparency = 0)
+  col_fun = colorRamp2(c(min_color_val,0.5*min_color_val,0, quantile(c(df_p$Score,df_n$Score),probs = 0.3),quantile(c(df_p$Score,df_n$Score),probs = 0.9),
+                         max_color_val), c("#5a8fbc","white","white","white","#d37c6c","#d37c6c"),transparency = 0)
   
   png(
     file.path(save.path,paste0(cell_type,"_",condition,"_Circos.png")),
-    width = 3200,
-    height = 3200,
+    width = 3800,
+    height = 3800,
     res = 300
   )
   # svg(
@@ -1541,9 +1678,9 @@ Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", c
   #   width = 15,
   #   height = 15
   # )
-  
+ 
   par(bg = NA)
-  circos.par(cell.padding = c(0, 0, 0, 0), track.margin = c(-0.15,0.2),circle.margin = c(0.1,0.8,0.1,0.2))
+  circos.par(cell.padding = c(0, 0, 0, 0), start.degree = 300,track.margin = c(-0.15,0.2),circle.margin = c(0.1,0.8,0.1,0.2))
   circos.initialize(sectors, xlim = c(0, 1))
   circos.trackPlotRegion(ylim = c(0, 1), track.height = 0.05, bg.border = NA)
   
@@ -1575,8 +1712,8 @@ Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", c
         mean(xlim),
         2,
         CELL_META$sector.index,
-        facing = "clockwise",
-        niceFacing = TRUE,
+        facing = "clockwise", # "inside", "outside", "reverse.clockwise", "clockwise", "downward", "bending", "bending.inside", "bending.outside"
+        niceFacing = T,
         adj = c(0.05, 0.5),cex = 1.7,
         col= this_node_text_color
       )
@@ -1601,8 +1738,8 @@ Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", c
     height = 2000,
     res = 300)
   plot.new()
-  par(bg = NA,mar = c(1, 4, 1, 4) + 0.1)
-  
+  par(bg = NA,mar = c(1, 4, 1, 10) + 0.1)
+ 
   
   values <- seq(-1, 1, length.out = 100)
   
@@ -1610,7 +1747,7 @@ Circo_func <- function(cell_type = "CD4naive",pathways = "T cell dysfunction", c
   
   # Plotting
   color_matrix <- matrix(values, ncol = 1)
-  min_color_val_1 <- round(min(c(df_p$Score,df_n$Score)),1)-0.1
+  min_color_val_1 <- round(-max(c(df_p$Score,df_n$Score)),1)-0.1
   max_color_val_1 <- round(max(c(df_p$Score,df_n$Score)),1)+0.1
   image(1, values, t(color_matrix), 
         col = color_values, xlab = "", ylab = "", xaxt = "n", bty = "n", yaxt = "n", ann = FALSE)
