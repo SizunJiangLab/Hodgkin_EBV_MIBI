@@ -6,11 +6,12 @@ Classic Hodgkin Lymphoma (cHL) is a tumor composed of rare malignant Reed-Sternb
 
 ## Overview of code
 
-The following is an overview of the code in this repository:
+The following is an overview of the code in this repository. Please note that since this repository doesn't contain the necessary data that was used for the analysis, if one wishes to reproduce the result, one will need to download the data and change the file path accordingly in the code.
 
 | File Name | Description |
 | :---------- | :---------- |
-| Figure2.rmd | Something   |
-| Figure3.rmd |             |
-| Figure4.rmd |             |
+| Figure2.rmd | Produces Figure 2A, 2B, 2C, 2E   |
+| Figure3.rmd | Produces Figure 3A, 3B, 3C, 3D, 3E            |
+| Figure4.rmd | Produces Figure 4B, 4C           |
+| Supplementary.rmd| Produces supplementary figures for Figure 2, 3, and 4|
 
