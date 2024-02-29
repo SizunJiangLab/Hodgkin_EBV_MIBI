@@ -13,7 +13,7 @@ The following is an overview of the code in this repository. Please note that si
 | Figure2.rmd | Produces Figure 2A, 2B, 2C, 2E   |
 | Figure3.rmd | Produces Figure 3A, 3B, 3C, 3D, 3E            |
 | Figure4.rmd | Produces Figure 4B, 4C           |
-| Figure5/ | Includes scripts that produce Figure 5, and related supplementary figures |
+| Figure5/ | Includes scripts that produce Figure 5C, 5D, 5F, and related supplementary figures |
 | Figure6.rmd | Produces Figure 6A, 6B, 6C, 6D |
 | Supplementary.rmd| Produces supplementary figures for Figures 2, 3, and 4|
 | multi_test_correction.R | Conducts all the statistical tests in the paper and corrects for multiple comparisons using the Benjamini-Hochberg procedure |
