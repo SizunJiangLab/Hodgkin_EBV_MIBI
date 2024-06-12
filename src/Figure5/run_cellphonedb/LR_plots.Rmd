@@ -1,0 +1,178 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+pacman::p_load(tidyverse, ktplots, SingleCellExperiment, ComplexHeatmap, reshape2)
+```
+
+```{r}
+pvals <- read.delim('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/outputs/statistical_analysis_pvalues_01_08_2024_17:38:34.txt', check.names = F) %>%
+  dplyr::select(-contains('ons_'))
+means <- read.delim('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/outputs/statistical_analysis_means_01_08_2024_17:38:34.txt', check.names = F) %>%
+  dplyr::select(-contains('ons_'))
+decon <- read.delim('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/outputs/statistical_analysis_deconvoluted_01_08_2024_17:38:34.txt', check.names = F)
+signif_means <- read.delim('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/outputs/statistical_analysis_significant_means_01_08_2024_17:38:34.txt', check.names = F) %>%
+  dplyr::select(-contains('ons_')) %>%
+  dplyr::filter(if_any(13:84, ~!is.na(.))) # filter for only significant interactions in any interacting pair
+
+cell_interactions <- colnames(signif_means)[13:84]
+
+mdata <- read_csv('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/mdata.csv')
+counts <- read.csv('/mnt/nfs/home/jasonyeung/cHL_EBV/EBV_chl_batchcorrected-CPM-nNCGH_1500-K_11.csv', row.names = 1)
+names(counts) <- gsub('\\.', '-', names(counts))
+
+counts <- counts[, mdata$Cell] # reorder
+sce <- SingleCellExperiment(list(counts = counts), colData = DataFrame(celltype = mdata$cell_type))
+```
+
+```{r}
+custom_genesets <- list(chemokines = grep('^CXC|CCL|CCR|CX3|XCL|XCR', signif_means$interacting_pair, value = T),
+                        th1 = grep('IL2|IL12|IL18|IL27|IFNG|IL10|TNF$|TNF |LTA|LTB|STAT1|CCR5|CXCR3|IL12RB1|IFNGR1|TBX21|STAT4', signif_means$interacting_pair, value = T),
+                        th2 = grep('IL4|IL5|IL25|IL10|IL13|AREG|STAT6|GATA3|IL4R', signif_means$interacting_pair, value = T),
+                        th17 = grep('IL21|IL22|IL24|IL26|IL17A|IL17A|IL17F|IL17RA|IL10|RORC|RORA|STAT3|CCR4|CCR6|IL23RA|TGFB', signif_means$interacting_pair, value = T),
+                        stimulatory = grep('CD86|CD80|CD48|LILRB2|LILRB4|TNF|CD2|ICAM|SLAM|LT[AB]|NECTIN2|CD40|CD70|CD27|CD28|CD58|TSLP|PVR|CD44|CD55|CD[1-9]', signif_means$interacting_pair, value = T),
+                        exhaustion = grep('PDCD1|CD274|PDCD1LG2|LAG3|FGL1|CTLA4|CD80|CD86|CD96|PVR|TIGIT|NECTIN2|SLAMF4|CD244|HAVCR2|HAVR2|LGALS9|LEG9|CEACAM1|BTLA|TNFRSF14|CD160|SLAMF7|NKG2A|KLRC1|VISTA|VSIR|GI24', signif_means$interacting_pair, value = T),
+                        target_chemokines = grep('CXCR3|CXCL9|CXCL10|CXCL11|CCR4|CCL17|CCL22|CCR7|CCL19|CCL21', signif_means$interacting_pair, value = T))
+```
+
+```{r}
+set <- 'chemokines'
+celltype <- 'tumor'
+
+# for scaling mean expression
+scale_means <- function(x) {
+    (x - min(x))/(max(x) - min(x))
+}
+
+# subset and scale mean paired expression values
+all_values <- means %>%
+  dplyr::filter(interacting_pair %in% custom_genesets[[set]]) %>%
+  dplyr::select(interacting_pair, all_of(grep(celltype, cell_interactions, value = T, ignore.case = T))) %>%
+  column_to_rownames(var = 'interacting_pair') %>%
+  as.matrix()
+
+all_values <- apply(all_values, 1, scale_means) %>% t()
+
+# get significance from signif_means
+signif <- signif_means %>%
+  dplyr::filter(interacting_pair %in% custom_genesets[[set]]) %>%
+  dplyr::select(interacting_pair, all_of(grep(celltype, cell_interactions, value = T, ignore.case = T))) %>%
+  column_to_rownames(var = 'interacting_pair') %>%
+  as.matrix()
+
+signif <- signif[rownames(all_values), colnames(all_values), drop = F] # match row/col order
+signif <- ifelse(!is.na(signif), 1, NA) # set values to 1
+
+only_signif <- all_values * signif
+
+# reorder based on hclust
+od <- hclust(dist(all_values), method = 'complete')$order
+all_values <- all_values[od,]
+only_signif <- only_signif[od,]
+
+# complexheatmap annotations/colors
+ebv_annotation <- rep('empty', length(colnames(all_values)))
+ebv_annotation[grepl('\\bEBV\\+\\b', colnames(all_values))] <- 'EBV+'
+ebv_annotation[grepl('\\bEBV\\-\\b', colnames(all_values))] <- 'EBV-'
+
+ebv_colors <- c('EBV+' = '#D55E00', 'EBV-' = '#009E73')
+
+top_annotation <- HeatmapAnnotation(EBV_status = ebv_annotation,
+                                    col = list(EBV_status = ebv_colors),
+                                    show_legend = F,
+                                    show_annotation_name = F)
+
+col_fun <- circlize::colorRamp2(c(0, 1), c('#FFFFFF', '#C74132'))
+
+# draw heatmaps
+pdf(file = paste0('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/plots/all_values_', celltype, '_', set, '.pdf'), width = 8, height = 10)
+ht_plot <- Heatmap(all_values,
+                   name = 'scaled\nmeans',
+                   rect_gp = gpar(col = 'black', lwd = 1),
+                   row_title = '',
+                   row_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   column_title = '',
+                   column_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   col = col_fun,
+                   top_annotation = top_annotation,
+                   cluster_rows = F,
+                   cluster_columns = F,
+                   show_row_dend = F,
+                   show_column_dend = F,
+                   show_row_names = T,
+                   row_names_gp = grid::gpar(fontsize = 8, fontface = 'bold'),
+                   show_column_names = T,
+                   column_names_gp = grid::gpar(fontsize = 8, fontface = 'bold'))
+draw(ht_plot, padding = unit(c(50, 10, 10, 50), 'mm'))
+dev.off()
+
+pdf(file = paste0('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/plots/only_signif_', celltype, '_', set, '.pdf'), width = 8, height = 10)
+ht_plot <- Heatmap(only_signif,
+                   name = 'scaled\nmeans',
+                   rect_gp = gpar(col = 'black', lwd = 1),
+                   row_title = '',
+                   row_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   column_title = '',
+                   column_title_gp = gpar(fontsize = 16, fontface = 'bold'),
+                   col = col_fun,
+                   top_annotation = top_annotation,
+                   cluster_rows = F,
+                   cluster_columns = F,
+                   show_row_dend = F,
+                   show_column_dend = F,
+                   show_row_names = T,
+                   row_names_gp = grid::gpar(fontsize = 8, fontface = 'bold'),
+                   show_column_names = T,
+                   column_names_gp = grid::gpar(fontsize = 8, fontface = 'bold'))
+draw(ht_plot, padding = unit(c(50, 10, 10, 50), 'mm'))
+dev.off()
+
+```
+
+```{r}
+# log2 expression heatmap (SUPPLEMENTAL)
+exhaustion_genes <- read_csv('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/exhaustion_genes.txt', col_names = F)$X1 %>% unique()
+ifn_genes <- read_csv('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/ifn_genes.txt', col_names = F)$X1 %>% unique()
+progenitor_genes <- read_csv('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/progenitor_t.txt', col_names = F)$X1 %>% unique()
+terminal_genes <- read_csv('/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/terminal_t.txt', col_names = F)$X1 %>% unique()
+
+target_genes <- progenitor_genes
+
+setdiff(target_genes, rownames(counts))
+
+target_counts <- counts[target_genes, ] %>% drop_na()
+
+p <- target_counts %>%
+  rownames_to_column(var = 'gene') %>%
+  melt() %>% as.data.frame() %>%
+  dplyr::rename(Cell = variable, count = value) %>%
+  left_join(mdata, by = 'Cell') %>%
+  group_by(gene, cell_type) %>%
+  summarise(across(where(is.numeric), mean)) %>%
+  mutate(across(where(is.numeric), scale)) %>%
+  ungroup() %>%
+  separate(cell_type, into = c('EBV_status', 'segment'), sep = '_', remove = T) %>%
+  dplyr::mutate(z_count = c(count)) %>%
+  dplyr::mutate(z_count = case_when(z_count > 1 ~ 1,
+                                    z_count < -1 ~ -1,
+                                    .default = z_count)) %>%
+  ggplot(aes(x = gene, y = segment)) +
+    geom_tile(aes(fill = z_count)) +
+    scale_fill_gradient2(low = 'magenta',
+                         mid = 'black',
+                         high = 'yellow',
+                         midpoint = 0,
+                         limit = c(-1, 1)) +
+    labs(x = 'Gene', y = 'Segment') +
+    facet_wrap(~EBV_status, ncol = 1) +
+    theme_bw() +
+    theme(text = element_text(size = 16, face = 'bold'),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+ggsave('log2counts.pdf', p, device = 'pdf', path = '/mnt/nfs/home/jasonyeung/cHL_EBV/run_cellphonedb/plots/', width = 20, height = 12)
+
+```
+
