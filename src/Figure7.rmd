@@ -247,7 +247,7 @@ df_ebvplot = Adjacent_Tumor_Fxn %>%
     CD45RO = (CD45RO_markerMean),
     LAG3 = (LAG3.200_markerMean),
     PD1 = (PD1_markerMean),
-    Tox = (Tox.200_markerMean),
+    Tox = mean(Tox_thres_otsu == 1),
     .groups = "drop"
   )
 
