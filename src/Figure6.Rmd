@@ -844,4 +844,142 @@ for (i in c("CD4mem", "CD4naive",   "CD8mem", "CD8naive")){
 }
 ```
 
+### Figure 6G
 
+#### Required Libraries
+```{r, message=FALSE}
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(tidyr)
+library(Seurat)
+```
+
+#### Load Seurat Object
+```{r}
+so = readRDS("cHL.CosMx1k.seuratobject.rds")
+```
+
+#### Set colors
+```{r}
+celltype_color =  c("CD4+ T cells" = "#4DAF4A",
+                     "Macrophages" = "#f7c173",
+                     "NK" = "#FFFF33",
+                     "Fibroblasts"= "green",
+                     "DC" = "#377EB8",
+                     "CD8+ T cells" = "#984EA3",
+                     "Treg"  = "#BEBADA",
+                     "Plasma"= "coral1" ,
+                     "B cells" = "#F781BF", 
+                     "Endothelial" = "#A65628",
+                     "Tumor" = "#E41A1C",
+                     "Neutrophil" = "#F6CEC1"
+                     )
+```
+
+```{r, message=FALSE}
+DimPlot(so, label = T, label.size = 3, reduction = "umap",cols = celltype_color) + NoLegend()
+ggsave("Figure6.G.pdf")
+```
+
+### Figure 6H
+
+```{r}
+cellprops=SCpubr::do_BarPlot(so, 
+                              group.by = "Cell.Type",
+                              split.by = "EBV",
+                              position = "fill",
+                              order = T, order.by = "CD8+ T cells",
+                              flip = T,
+                              add.n = TRUE,
+                              add.n.size = 4, colors.use =  celltype_color,
+                              return_data = T)
+
+
+celltype_log2c <-  cellprops$Data %>% group_by(EBV) %>% 
+    mutate(total_n = sum(n)) %>%  ungroup() %>% 
+    group_by(Cell.Type) %>% 
+    mutate(diff = log2((lag(n)/lag(total_n)) / (n/total_n))) %>% drop_na()  %>% 
+    ggplot(aes(x = reorder(Cell.Type, diff), y = diff, fill = Cell.Type)) +
+    geom_col() + 
+    geom_rect(aes(xmin = 0, ymin = 0, xmax = Inf, ymax = Inf), fill = '#D55E00', alpha = 0.02) + 
+    geom_rect(aes(xmin = 0, ymin = -Inf, xmax = Inf, ymax = 0), fill = '#009E73', alpha = 0.02) + 
+    labs(x = 'Cell Type', y = 'Log2 Fold Enrichment', title = 'Cell Type Enrichment (EBV+/EBV-)') + 
+    scale_fill_manual('Cell.Type', values = celltype_color, na.value = 'white') +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+          legend.position = 'none',
+          text = element_text(size = 12))
+
+
+ggsave('Figure6.H.pdf', celltype_log2c, dpi = 320, width = 12, height = 6)
+```
+
+### Figure 6I
+
+```{r, warning=FALSE}
+soCD4=subset(so, Cell.Type %like% "CD4")
+
+p = ggplot(soCD4@meta.data, aes(x=EBV, y=EXHamongCD4, fill=Tumor)) + 
+    geom_violin(trim = FALSE) + geom_boxplot(width=0.4, position=position_dodge(0.9)) + theme_bw() + scale_fill_manual(values=c("#f6adff", "#e1d936"))  
+p + stat_compare_means(method = "wilcox.test", method.args = list(alternative="greater"), label="p.signif") + xlab("") + ylab("GSVA Exhaustion Score") 
+
+ggsave("Figure6.I.CD4.pdf")
+
+
+soCD8=subset(so, Cell.Type %like% "CD8")
+
+p = ggplot(soCD8@meta.data, aes(x=EBV, y=EXHamongCD8, fill=Tumor)) + 
+    geom_violin(trim = FALSE) + geom_boxplot(width=0.4, position=position_dodge(0.9)) + theme_bw() + scale_fill_manual(values=c("#f6adff", "#e1d936"))  
+p + stat_compare_means(method = "wilcox.test", method.args = list(alternative="greater"), label="p.signif") + xlab("") + ylab("GSVA Exhaustion Score") 
+
+ggsave("Figure6.I.CD8.pdf")
+```
+
+### Figure 6K
+
+```{r}
+# subset only EBV+
+cHL = subset(so@meta.data, EBV == "EBV+")
+
+ggplot(subset(cHL, Cell.Type %like% "CD8" ), aes(x=distToTumorCell, y=EXHAUSTION)) + 
+    scale_colour_manual(values=c("#9e3135ff", "#e6ac5aff")) +
+    geom_smooth(method=lm, mapping = aes(color = LMP1expr_NearestTumorCell)) + stat_cor(method = "spearman",mapping = aes(color = LMP1expr_NearestTumorCell)) + theme_bw() + scale_x_continuous(name="Distance of CD8+ T-cells to Tumor")+ scale_y_continuous(name="GSVA score of T-cell exhaustion") + guides(color=guide_legend(title="LMP1 expression")) 
+
+ggsave("Figure6.K.CD8.pdf", width = 9, height = 6)
+
+
+ggplot(subset(cHL, Cell.Type %like% "CD4" ), aes(x=distToTumorCell, y=EXHAUSTION)) + 
+    scale_colour_manual(values=c("#9e3135ff", "#e6ac5aff")) +
+    geom_smooth(method=lm, mapping = aes(color = LMP1expr_NearestTumorCell)) + stat_cor(method = "spearman",mapping = aes(color = LMP1expr_NearestTumorCell)) + theme_bw() + scale_x_continuous(name="Distance of CD4+ T-cells to Tumor")+ scale_y_continuous(name="GSVA score of T-cell exhaustion") + guides(color=guide_legend(title="LMP1 expression")) 
+
+ggsave("Figure6.K.CD4.pdf", width = 9, height = 6)
+```
+
+### Figure 6J
+
+```{r}
+#select only T cells and keep the T cell with the minimum distance to Tumor cell
+cHLT=subset(cHL, Cell.Type %like% "CD")
+
+cHLT = cHLT %>%
+  group_by(row.names(cHLT)) %>%
+  slice_min(distToTumorCell) %>%
+  ungroup
+
+p = ggplot(subset(cHLT, Cell.Type %like% "CD8"), aes(x=LMP1expr_NearestTumorCell, y=EXHAUSTION, fill=LMP1expr_NearestTumorCell)) + 
+geom_violin(trim = FALSE) + geom_boxplot(width=0.4, position=position_dodge(0.9)) + theme_bw() + scale_fill_manual(values=c("#9e3135ff", "#e6ac5aff")) 
+
+p + stat_compare_means(method = "wilcox.test", method.args = list(alternative="greater"), label="p.signif") + xlab("LMP1 expression group") + ylab("GSVA score of CD8 T-cell exhaustion") 
+
+ggsave("Figure6.PanelJ.CD8.pdf", width = 6, height = 6)
+
+
+p = ggplot(subset(cHLT, Cell.Type %like% "CD4"), aes(x=LMP1expr_NearestTumorCell, y=EXHAUSTION, fill=LMP1expr_NearestTumorCell)) + 
+geom_violin(trim = FALSE) + geom_boxplot(width=0.4, position=position_dodge(0.9)) + theme_bw() + scale_fill_manual(values=c("#9e3135ff", "#e6ac5aff")) 
+
+p + stat_compare_means(method = "wilcox.test", method.args = list(alternative="greater"), label="p.signif") + xlab("LMP1 expression group") + ylab("GSVA score of CD4 T-cell exhaustion")
+
+ggsave("Figure6.PanelJ.CD4.pdf", width = 6, height = 6)
+```
