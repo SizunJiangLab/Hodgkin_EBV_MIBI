@@ -15,7 +15,7 @@ The following is an overview of the code in this repository. Please note that si
 | MESA.ipynb  | Produces the spatial diversity heatmap and violin plots in Figure 3A|
 | Figure4.rmd | Produces Figure 4B, 4C           |
 | Figure5/ | Includes scripts that produce Figure 5C, 5D, 5F, and related supplementary figures |
-| Figure6.rmd | Produces Figure 6A, 6B, 6C, 6D |
+| Figure6.rmd | Produces Figure 6A, 6B, 6C, 6D, 6E |
 | Figure7.rmd | Produces Figure 7B, 7D, 7E, 7F |
 | Supplementary.rmd| Produces supplementary figures for Figures 2, 3, and 4|
 | multi_test_correction.R | Conducts all the statistical tests in the paper and corrects for multiple comparisons using the Benjamini-Hochberg procedure |
