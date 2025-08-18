@@ -481,3 +481,214 @@ df_ebv_lmp %>%
   scale_color_manual(values = c("LMP" = "maroon", "pos" = "orange")) +
   theme_minimal()
 ```
+
+## Figure 7F GSVA
+
+```{r}
+
+##############################################################################
+## 0.  Libraries & full GO:BP catalogue
+##############################################################################
+library(msigdbr)
+library(dplyr)
+library(Seurat)
+library(tibble)
+
+cos = readRDS('./cHL.CosMx1k.rds')
+metadf = cos@meta.data
+#write.csv(metadf, './cosmx_metadf_EBVp.csv')
+dim(metadf) #133081     22
+
+gobp_all <- msigdbr(
+  species     = "Homo sapiens",
+  category    = "C5",
+  subcategory = "GO:BP"
+)
+
+##############################################################################
+## 1.  Your explicit list of GO:BP IDs
+##############################################################################
+go_ids <- c(
+  "GO:0042110", # T_CELL_ACTIVATION            :contentReference[oaicite:0]{index=0}
+  "GO:0030217", # T_CELL_DIFFERENTIATION
+  "GO:0002286", # T_CELL_ACTIVATION_INVOLVED_IN_IMMUNE_RESPONSE :contentReference[oaicite:1]{index=1}
+  "GO:0046631", # ALPHA_BETA_T_CELL_ACTIVATION  :contentReference[oaicite:2]{index=2}
+  "GO:0002369", # T_CELL_CYTOKINE_PRODUCTION
+  "GO:0032747", # POSITIVE_REGULATION_OF_INTERLEUKIN_2_PRODUCTION
+  "GO:0070663", # REGULATION_OF_LEUKOCYTE_PROLIFERATION
+  "GO:0002768", # IMMUNE_RESPONSE-REGULATING_CELL_SURFACE_RECEPTOR_SIGNALING_PATHWAY
+  "GO:0032753", # POSITIVE_REGULATION_OF_INTERLEUKIN_6_PRODUCTION
+  "GO:2001187", # REGULATION_OF_T_CELL_ACTIVATION_VIA_TCR_MHC_CONTACT
+  "GO:0002521", # LEUKOCYTE_DIFFERENTIATION
+  "GO:0034121", # REGULATION_OF_TOLL-LIKE_RECEPTOR_SIGNALING_PATHWAY
+  "GO:0002763", # POSITIVE_REGULATION_OF_T_CELL_APOPTOTIC_PROCESS
+  "GO:0032755", # POSITIVE_REGULATION_OF_INTERLEUKIN_10_PRODUCTION
+  ## --- PI3K/AKT/mTOR signalling add-ons (all validated) ---
+  "GO:0032008", # POSITIVE_REGULATION_OF_TORC1_SIGNALING           :contentReference[oaicite:3]{index=3}
+  "GO:0051897", # REGULATION_OF_PI3K_AKT_SIGNAL_TRANSDUCTION       :contentReference[oaicite:4]{index=4}
+  "GO:0048015",  # PHOSPHATIDYLINOSITOL-MEDIATED_SIGNALING
+  "GO:0050856" # ← optional parent term for TCR pathway, also present in msigdbr
+)
+
+
+## Verify every ID exists in the catalogue
+missing_ids <- setdiff(go_ids, gobp_all$gs_exact_source)
+if (length(missing_ids))
+  stop("These GO IDs not found in msigdbr: ", paste(missing_ids, collapse = ", "))
+
+##############################################################################
+## 2.  Build the gene-set list with pretty names
+##############################################################################
+gobp_sel <- gobp_all %>% filter(gs_exact_source %in% go_ids)
+
+go_gene_sets <- split(gobp_sel$gene_symbol, gobp_sel$gs_exact_source)
+
+pretty_names <- gobp_sel %>%
+  distinct(gs_exact_source, gs_name) %>%
+  mutate(pretty = paste0(gs_exact_source, "_", toupper(gs_name))) %>%
+  deframe()                               # key = GO ID, value = pretty string
+
+names(go_gene_sets) <- pretty_names[names(go_gene_sets)]
+
+##############################################################################
+## 3.  Attach module scores with those exact names
+##############################################################################
+cos[["Nanostring"]] <- JoinLayers(cos[["Nanostring"]])
+DefaultLayer(cos[["Nanostring"]]) <- "data"
+
+for (nm in names(go_gene_sets)) {
+  cos <- AddModuleScore(
+    object   = cos,
+    features = list(go_gene_sets[[nm]]),
+    name     = nm,          # Seurat appends "1"
+    ctrl     = 10
+  )
+  colnames(cos)[colnames(cos) == paste0(nm, "1")] <- nm
+}
+
+##############################################################################
+## 4.  Build a lookup table: score column → GO ID → term name → matched genes
+##############################################################################
+expressed_genes <- rownames(cos)
+go_overlap <- sapply(go_gene_sets, function(g)
+  paste(intersect(g, expressed_genes), collapse = ", ")
+)
+
+score_map <- tibble(
+  score_col     = names(go_gene_sets),
+  GO_ID         = sub("_.*$", "", names(go_gene_sets)),
+  GO_term       = sub("^GO:[0-9]+_", "", names(go_gene_sets)),
+  matched_genes = unname(go_overlap)
+)
+
+##############################################################################
+## 5.  Save to disk
+##############################################################################
+write.csv(cos@meta.data, "./meta_scoresV2.csv")
+write.csv(score_map,      "./score_namesV2.csv")
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readr)
+
+meta <- read_csv("./meta_scoresV2.csv")
+scores <- read_csv("./score_namesV2.csv")
+
+meta <- meta %>%
+  mutate(
+    EBV = factor(EBV, levels = c("EBV-", "EBV+")),
+    Cell.Type = factor(Cell.Type,
+      levels = c("B cells","CD4+ T cells","CD8+ T cells","DC",
+                 "Endothelial","Fibroblasts","Macrophages",
+                 "Neutrophil","NK","Plasma","Treg","Tumor"))
+  )
+
+score_cols <- grep("^GO", colnames(meta), value = TRUE)
+
+agg <- meta %>%
+  select(EBV, Cell.Type, all_of(score_cols)) %>%
+  group_by(EBV, Cell.Type) %>%
+  summarise(across(all_of(score_cols), mean, na.rm = TRUE), .groups = "drop")
+
+# Only CD8+ T cells
+long_cd8 <- agg %>%
+  filter(Cell.Type == "CD8+ T cells") %>%
+  pivot_longer(cols = -c(EBV, Cell.Type), names_to = "GOscore", values_to = "mean_score") %>%
+  pivot_wider(names_from = EBV, values_from = mean_score, names_prefix = "mean_") %>%
+  mutate(delta = `mean_EBV+` - `mean_EBV-`) %>%
+  arrange(desc(delta)) %>%
+  mutate(GOscore = factor(GOscore, levels = GOscore))  # keep order in plot
+
+ggplot(long_cd8, aes(x = GOscore, y = delta, fill = delta > 0)) +
+  geom_col(width = 0.75, show.legend = FALSE) +
+  scale_fill_manual(values = c("TRUE" = "#D55E00", "FALSE" = "#0072B2")) +
+  geom_hline(yintercept = 0, color = "black") +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1, size = 10),
+    axis.text.y = element_text(size = 10)
+  ) +
+  labs(x = NULL, y = "GSVA Score Difference (EBV+ − EBV−)",
+       title = "CD8+ T cells: GO Module Score Difference")
+
+ggsave("./plots/GOscore_delta_CD8T_only_sorted.pdf", width = 12, height = 10)
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readr)
+
+# Load precomputed GSVA meta data
+meta <- read_csv("./meta_scoresV2.csv")
+
+# Set LMP1 and Cell.Type as factors
+meta <- meta %>%
+  mutate(
+    LMP1 = factor(LMP1expr_NearestTumorCell, levels = c("Low", "High")),
+    Cell.Type = factor(Cell.Type,
+      levels = c("B cells", "CD4+ T cells", "CD8+ T cells", "DC",
+                 "Endothelial", "Fibroblasts", "Macrophages",
+                 "Neutrophil", "NK", "Plasma", "Treg", "Tumor"))
+  )
+
+# GO terms of interest
+selected_gos <- c(
+  "GOBP_T_CELL_ACTIVATION_INVOLVED_IN_IMMUNE_RESPONSE1",
+  "GOBP_T_CELL_DIFFERENTIATION1",
+  "GOBP_REGULATION_OF_T_CELL_RECEPTOR_SIGNALING_PATHWAY1",
+  "GOBP_POSITIVE_REGULATION_OF_PHOSPHATIDYLINOSITOL_3_KINASE_PROTEIN_KINASE_B_SIGNAL_TRANSDUCTION1",
+  "GOBP_PHOSPHATIDYLINOSITOL_MEDIATED_SIGNALING1",
+  "GOBP_POSITIVE_REGULATION_OF_TOR_SIGNALING1"
+)
+
+# Mean GSVA per LMP1 group for CD8+ T cells only
+delta_tbl <- meta %>%
+  filter(Cell.Type == "CD8+ T cells") %>%
+  group_by(LMP1) %>%
+  summarise(across(all_of(selected_gos), mean, na.rm = TRUE), .groups = "drop") %>%
+  pivot_longer(-LMP1, names_to = "GOscore", values_to = "mean_score") %>%
+  pivot_wider(names_from = LMP1, values_from = mean_score, names_prefix = "mean_") %>%
+  mutate(delta = mean_High - mean_Low) %>%
+  arrange(desc(delta)) %>%
+  mutate(GOscore = factor(GOscore, levels = GOscore))  # preserve order for plot
+
+# Plot
+ggplot(delta_tbl, aes(x = GOscore, y = delta, fill = delta > 0)) +
+  geom_col(width = 0.75, show.legend = FALSE) +
+  scale_fill_manual(values = c("TRUE" = "#D55E00", "FALSE" = "#0072B2")) +
+  coord_flip() +
+  geom_hline(yintercept = 0, color = "black") +
+  theme_minimal(base_size = 12) +
+  labs(
+    x = NULL,
+    y = "GSVA Score Difference (LMP1 High − Low)",
+    title = "CD8+ T cells: Selected GO Module Score Differences (LMP1)"
+  )
+
+# Save plot
+ggsave("./plots/CD8T_GOscore_delta_LMP1.pdf", width = 20, height = 10)
+
+```
+
