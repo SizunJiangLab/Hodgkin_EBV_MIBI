@@ -3,6 +3,8 @@ title: "Supplementary Figures"
 author: "Huaying Qiu"
 date: "2024-01-30"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -31,7 +33,7 @@ MHC1_test <- fig2_test_df %>%
   mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>%
   ggplot(aes(x = celltype, y = marker, fill = plot_value)) + 
   geom_tile(color = 'black', size = 0.5) +
-  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  scale_fill_gradient(na.value = 'gray', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
   #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
   theme_bw() + 
   labs(fill = 'Test Result', title = 'Difference between marker, EBV+ vs. EBV-') + 
@@ -53,7 +55,7 @@ MHC2_test <- fig2_test_df %>%
   mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>%
   ggplot(aes(x = celltype, y = marker, fill = plot_value)) + 
   geom_tile(color = 'black', size = 0.5) +
-  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  scale_fill_gradient(na.value = 'gray', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
   #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
   theme_bw() + 
   labs(fill = 'Test Result', title = 'Difference between marker, EBV+ vs. EBV-') + 
@@ -75,7 +77,7 @@ exhaustion_t <- fig2_test_df %>%
   mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>%
   ggplot(aes(x = celltype, y = marker, fill = plot_value)) + 
   geom_tile(color = 'black', size = 0.5) +
-  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  scale_fill_gradient(na.value = 'gray', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
   #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
   theme_bw() + 
   labs(fill = 'Test Result', title = 'Difference between marker, EBV+ vs. EBV-') + 
@@ -97,7 +99,7 @@ exhaustion_other <- fig2_test_df %>%
   mutate(reject.adj = factor(reject.adj, levels = c(1, 0), labels = c('Significant', 'Non-significant'))) %>%
   ggplot(aes(x = celltype, y = marker, fill = plot_value)) + 
   geom_tile(color = 'black', size = 0.5) +
-  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  scale_fill_gradient(na.value = 'gray', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
   #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
   theme_bw() + 
   labs(fill = 'Test Result', title = 'Difference between marker, EBV+ vs. EBV-') + 
@@ -132,7 +134,7 @@ test1 <- fig3e_test %>%
   mutate(marker = factor(marker, levels = c('PD-1', 'Lag3', 'Tox', 'CD45RO', 'HLA1', 'B2-Microglobulin'))) %>% 
   ggplot(aes(x = celltype, y = interaction(marker, test, sep = ', '), fill = plot_value)) + 
   geom_tile(color = 'black', size = 0.5) +
-  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  scale_fill_gradient(na.value = 'gray', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
   #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
   theme_bw() + 
   labs(fill = 'Test Result', title = 'Difference between marker within EBV+, CN0 vs. CN1') + 
@@ -155,7 +157,7 @@ test2 <- fig3e_test %>%
   mutate(marker = factor(marker, levels = c('PD-1', 'Lag3', 'Tox', 'CD45RO', 'HLA1', 'B2-Microglobulin'))) %>% 
   ggplot(aes(x = celltype, y = interaction(marker, test, sep = ', '), fill = plot_value)) + 
   geom_tile(color = 'black', size = 0.5) +
-  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  scale_fill_gradient(na.value = 'gray', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
   #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
   theme_bw() + 
   labs(fill = 'Test Result', title = 'Difference between marker within EBV-, CN0 vs. CN1') + 
@@ -178,7 +180,7 @@ test3 <- fig3e_test %>%
   mutate(marker = factor(marker, levels = c('PD-L1', 'HLA-DR', 'HLA1', 'B2-Microglobulin'))) %>% 
   ggplot(aes(x = celltype, y = interaction(marker, test, sep = ', '), fill = plot_value)) + 
   geom_tile(color = 'black', size = 0.5) +
-  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  scale_fill_gradient(na.value = 'gray', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
   #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
   theme_bw() + 
   labs(fill = 'Test Result', title = 'Difference between marker within EBV+, CN0 vs. CN1') + 
@@ -201,7 +203,7 @@ test4 <- fig3e_test %>%
   mutate(marker = factor(marker, levels = c('PD-L1', 'HLA-DR', 'HLA1', 'B2-Microglobulin'))) %>% 
   ggplot(aes(x = celltype, y = interaction(marker, test, sep = ', '), fill = plot_value)) + 
   geom_tile(color = 'black', size = 0.5) +
-  scale_fill_gradient(na.value = '#F3F9F1', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
+  scale_fill_gradient(na.value = 'gray', high = 'white', low = '#C32136', limits = c(0, 0.05), breaks = c(0, 0.01, 0.02, 0.03, 0.04, 0.05)) + 
   #scale_fill_manual(values = c('Significant' = '#C32136', 'Non-significant' = '#F3F9F1'))+
   theme_bw() + 
   labs(fill = 'Test Result', title = 'Difference between marker within EBV-, CN0 vs. CN1') + 
@@ -218,6 +220,8 @@ ggsave('~/hodgkinebvmibi/paper_figures/figure3/supp/test4.pdf', test4)
 
 ```
 
+
+#### Figure 4
 
 ```{r}
 
@@ -240,7 +244,72 @@ exhaustion_test_result_df %>%
 
 ```
 
-#### Figure 4
+### Figure 3 Supp
+
+#### Cell Proportion within CN
+
+```{r}
+
+celltype_color <- c('Tumor' = '#E41A1C', 'DC' = '#377EB8', 'B' = '#F781BF', 'CD4' = '#4DAF4A', 'CD8' = '#984EA3',
+                    'M2' = '#F7C173', 'NK' = '#FFFF33', 'Endothelial' = '#A65628', 'M1' = '#00FFFF', 'Neutrophil' = '#F6CEC1',
+                    'Treg' = '#BEBADA', 'Cytotoxic CD4' = '#253D24', 'Cytotoxic CD8' = '#FF7F00')
+
+df_topic <- read_csv('~/Hodgkin_github/data/df_topic_noID.csv')
+
+ebv_LUT <- read_csv('~/Hodgkin_github/data/hodgkin_DFCI_noID.csv') %>% 
+  select(pointNum, ebv_status) %>% 
+  distinct(pointNum, ebv_status)
+
+df_topic <- df_topic %>% 
+  mutate(ebv_status = ebv_LUT$ebv_status[match(df_topic$pointNum, ebv_LUT$pointNum)])
+
+CN_boxplot <- df_topic %>% 
+  group_by(pointNum, Annotation, topic, ebv_status) %>% 
+  count() %>% 
+  group_by(pointNum, topic, ebv_status) %>% 
+  mutate(prop = n/sum(n)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = Annotation, y = prop, fill = Annotation)) + 
+  geom_boxplot() +
+  scale_fill_manual(values = celltype_color) + 
+  facet_wrap(~topic) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) + 
+  labs(x = 'Cell Type', y = 'Proportion within Cell Neighborhood', title = 'Cell Neighborhood Composition')
+
+CN_barplot <- df_topic %>% 
+  group_by(pointNum, Annotation, topic, ebv_status) %>% 
+  count() %>% 
+  group_by(pointNum, topic, ebv_status) %>% 
+  mutate(prop = n/sum(n)) %>% 
+  # Calculate mean and standard error of the mean
+  group_by(Annotation, topic) %>%
+  summarise(
+    mean_prop = mean(prop),
+    sem = sd(prop)/sqrt(n()),
+    .groups = 'drop'
+  ) %>%
+  ggplot(aes(x = Annotation, y = mean_prop, fill = Annotation)) + 
+  geom_col() +
+  geom_errorbar(aes(ymin = mean_prop - sem, ymax = mean_prop + sem), 
+                width = 0.2, 
+                color = "black") +
+  scale_fill_manual(values = celltype_color) + 
+  facet_wrap(~topic) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(y = "Mean Proportion ± SEM", x = 'Cell Type', title = 'Cell Neighborhood Composition')
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure3/supp/CN_comp_box.pdf', CN_boxplot, height = 10, width = 15, units = 'in')
+ggsave('~/hodgkinebvmibi/paper_figures/figure3/supp/CN_comp_bar.pdf', CN_barplot, height = 10, width = 15, units = 'in')
+
+```
+
+
+
+### Figure 4 Supp
+
+#### Decomposing Dysfunction Score 
 
 ```{r}
 
@@ -268,3 +337,122 @@ exhaustion_supp <- exhaustion_df %>%
 ggsave('~/hodgkinebvmibi/paper_figures/figure4/supp/individual_marker.pdf', exhaustion_supp, height = 15, width = 10, units = 'cm')
 
 ```
+
+#### Tumor Region Proportion
+
+```{r}
+
+density_prop <- hodgkin_annotated %>% 
+  filter(!(bin_deriva %in% c('Far', 'Tumor'))) %>%
+  group_by(pointNum, bin_deriva, ebv_status) %>% 
+  count() %>% 
+  ungroup() %>% 
+  # Create the tumor dense count column
+  left_join(
+    hodgkin_annotated %>% 
+      filter(!(bin_deriva %in% c('Far', 'Tumor'))) %>%
+      group_by(pointNum, bin_deriva, ebv_status) %>% 
+      count() %>% 
+      ungroup() %>%
+      filter(bin_deriva == 'Tumor Dense') %>%
+      select(pointNum, ebv_status, tumor_dense_count = n),
+    by = c('pointNum', 'ebv_status')
+  ) %>% 
+  group_by(pointNum, ebv_status) %>%
+  mutate(tumor_dense_prop = tumor_dense_count/sum(n)) %>% 
+  ungroup() %>%
+  # Create ordering within each ebv_status group
+  group_by(ebv_status) %>%
+  mutate(pointNum_ordered = reorder(as.factor(pointNum), -tumor_dense_prop)) %>%
+  ungroup() %>%
+  ggplot(aes(x = pointNum_ordered, y = n, fill = bin_deriva)) + 
+  geom_col(position = 'fill') + 
+  scale_fill_manual(values = c('#f6adff', '#e1d936')) +
+  theme_bw() + 
+  labs(x = 'pointNum', y = 'Proportion', fill = 'Tumor Density') + 
+  facet_wrap(~ebv_status, scales = 'free')
+  
+ggsave('~/hodgkinebvmibi/paper_figures/figure4/supp/density_proportion.pdf', density_prop, height = 10, width = 15, units = 'in')
+
+```
+
+#### Tumor Region Cutoff
+
+```{r}
+
+hodgkin_annotated %>% 
+  # Tumor would have score as NA since only immune cells have score
+  filter(!is.na(score)) %>%  
+  ggplot(aes(x = score)) + 
+  geom_histogram(bins = 500) + 
+  theme_bw()
+
+
+# Take out cells with score 0 and do the binning on the rest
+
+density_est_df <- hodgkin_annotated %>% 
+  filter(!is.na(score)) %>% 
+  filter(score != 0)
+
+density_est <- density(density_est_df$score)
+
+plot(density_est)
+
+deriva <- diff(density_est$y)/diff(density_est$x)
+
+bin_deriva_threshold <- density_est$x[which.min(deriva)]
+
+density_df <- data.frame(
+  x = density_est$x,
+  y = density_est$y
+)
+
+# Find the y-value and derivative at the threshold
+threshold_idx <- which.min(abs(density_est$x - bin_deriva_threshold))
+threshold_y <- density_est$y[threshold_idx]
+threshold_slope <- deriva[threshold_idx]
+
+# Create tangent line data
+# Tangent line: y = mx + b, where m is slope and we solve for b
+# At threshold point: threshold_y = threshold_slope * bin_deriva_threshold + b
+# So: b = threshold_y - threshold_slope * bin_deriva_threshold
+tangent_intercept <- threshold_y - threshold_slope * bin_deriva_threshold
+
+segment_width <- 0.1  # Adjust this to make segment longer/shorter
+tangent_x <- seq(bin_deriva_threshold - segment_width, 
+                 bin_deriva_threshold + segment_width, 
+                 length.out = 50)
+tangent_y <- threshold_slope * tangent_x + tangent_intercept
+
+tangent_df <- data.frame(
+  x = tangent_x,
+  y = tangent_y
+)
+
+# Plot density with tangent line segment
+tumor_score_threshold <- ggplot() +
+  # geom_histogram(data = density_est_df, aes(x = score), bins = 100, alpha = 0.5) +
+  geom_rect(aes(xmin = 0, ymin = 0, xmax = bin_deriva_threshold, ymax = Inf), fill = '#e1d936', alpha = 0.3) + 
+  geom_rect(aes(xmin = bin_deriva_threshold, ymin = 0, xmax = Inf, ymax = Inf), fill = '#f6adff', alpha = 0.3) + 
+  geom_density(data = density_est_df, aes(x = score), size = 1, color = 'blue') + 
+  # geom_line(data = density_df, aes(x = x, y = y), color = "blue", size = 1) +
+  geom_line(data = tangent_df, aes(x = x, y = y), color = "red", linetype = "dashed", size = 0.5) +
+  geom_vline(xintercept = bin_deriva_threshold, color = "red", linetype = "dotted") +
+  geom_point(aes(x = bin_deriva_threshold, y = threshold_y), color = "red", size = 3) +
+  annotate("text", 
+           x = bin_deriva_threshold + 0.05,  # Slightly to the right of the line
+           y = max(density_df$y) * 0.8,      # Near the top of the plot
+           label = paste("Threshold:", round(bin_deriva_threshold, 3)),
+           color = "red", 
+           hjust = 0) +  # Left-justify the text
+  scale_x_continuous(expand = c(0, 0)) + 
+  scale_y_continuous(expand = c(0, 0)) + 
+  theme_bw() +
+  labs(x = "Score", y = "Density", 
+       title = "Density Estimation with Tangent Line at Minimum Derivative")
+
+ggsave('~/hodgkinebvmibi/paper_figures/figure4/supp/tumor_score_threshold.pdf', tumor_score_threshold, height = 10, width = 15, units = 'in')
+```
+
+
+
