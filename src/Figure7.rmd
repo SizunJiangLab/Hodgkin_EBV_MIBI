@@ -1,0 +1,483 @@
+---
+title: "RevisionAnalysis_PLA_github"
+author: "YYY"
+date: "2025-08-12"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggpubr)
+library(circlize)
+library(RColorBrewer)
+library(ComplexHeatmap)
+```
+
+## Load data
+
+```{r}
+PLA_data = read.csv("/mnt/nfs/home/yaoyuyeo/Hodgkin_MIBI/RevisionAnnotations/RevisionAnnotations/PLA_data_recount_FINAL.csv")
+Functional_data = read.csv("/mnt/nfs/home/yaoyuyeo/Hodgkin_MIBI/RevisionAnnotations/RevisionAnnotations/Functional_data_FINAL.csv")
+Adjacent_data = read.csv("/mnt/nfs/home/yaoyuyeo/Hodgkin_MIBI/RevisionAnnotations/RevisionAnnotations/Adjacent_FINAL.csv")
+Annotation_data = Functional_data %>% dplyr::select(1:5)
+```
+
+## Figure 7B: Phenotype Heatmap
+
+```{r}
+
+marker_list <- c("Pax5.200", "FoxP3", "CD30.200", "CD3", "CD8.300", "CD68", "CD15", "CD206", "CD11c", "HLA1.200")
+
+marker_list <- paste0(marker_list, "_segmentMean")
+
+celltype_color <- c('Tumor' = '#E41A1C', 'DC' = '#377EB8', 'B cell' = '#F781BF', 'CD4 T' = '#4DAF4A', 'CD8 T' = '#984EA3',
+                    'M2' = '#F7C173', 'M1' = '#00FFFF', 'Neutrophil' = '#F6CEC1',
+                    'Treg' = '#BEBADA')
+
+celltype_color[sort(names(celltype_color))]
+
+plot_df <- Functional_data %>% 
+  dplyr::select(Annotation, all_of(marker_list)) %>% 
+  drop_na()
+
+
+
+mean_df <- plot_df %>% 
+  pivot_longer(cols = -Annotation, names_to = 'marker', values_to = 'value') %>% 
+  group_by(marker, Annotation) %>% 
+  summarise(mu = mean(value))
+
+
+pop_mean_df <- plot_df %>% 
+  pivot_longer(cols = -Annotation, names_to = 'marker') %>% 
+  group_by(marker) %>% 
+  summarise(pop_mean = mean(value),
+            pop_sd = sd(value))
+
+mean_df <- mean_df %>% 
+  ungroup() %>% 
+  mutate(pop_mean = pop_mean_df$pop_mean[match(mean_df$marker, pop_mean_df$marker)],
+         pop_sd = pop_mean_df$pop_sd[match(mean_df$marker, pop_mean_df$marker)]) %>% 
+  mutate(z_new = (mu - pop_mean)/pop_sd)
+
+heatmap_df <- mean_df %>% 
+  dplyr::select(marker, z_new, Annotation) %>% 
+  pivot_wider(names_from = 'marker', values_from = 'z_new')
+
+heatmap_mat <- t(as.matrix(heatmap_df[,-1]))
+
+colnames(heatmap_mat) <- heatmap_df$Annotation
+
+library(circlize)
+col_fun = colorRamp2(c(-0.5, 0, 0.5), c('#4575b4', "white", '#d73027'))
+
+bar_vec <- Functional_data %>% 
+  group_by(Annotation) %>% 
+  dplyr::count() %>% 
+  mutate(log_n = log10(n))
+
+# column_ha <- HeatmapAnnotation(count = anno_barplot(bar_vec$n, border = FALSE, bar_width = 0.9,
+#                                                     gp = gpar(col = 'black', fill = rep(celltype_color[sort(names(celltype_color))], 2)),
+#                                                     height = unit(3, 'cm')),
+#                                show_annotation_name = FALSE)
+
+column_ha <- HeatmapAnnotation(count = anno_barplot(bar_vec$n, border = FALSE, bar_width = 0.9,
+                                                    gp = gpar(col = 'black', fill = 'gray'),
+                                                    height = unit(3, 'cm')),
+                               show_annotation_name = FALSE)
+
+column_ha2 <- HeatmapAnnotation(celltype = sort(names(celltype_color)),
+                                col = list(celltype = celltype_color), show_annotation_name = FALSE,
+                                gp = gpar(col = 'black', lwd = 2),
+                                annotation_legend_param = list(title = 'Cell Type'))
+
+fig2_h1 <- Heatmap(heatmap_mat, cluster_rows = FALSE, cluster_columns  = FALSE, col = col_fun, clustering_method_columns = 'complete',
+                   row_names_side = 'left', top_annotation = column_ha, column_names_gp = grid::gpar(fontsize = 12),
+                   row_names_gp = grid::gpar(fontsize = 12), rect_gp = gpar(col = "black", lwd = 2), show_column_names = TRUE, name = 'Z Score',
+                   heatmap_legend_param = list(border = 'black'))
+
+draw(fig2_h1)
+
+```
+
+## Figure 7C: HRS and CD8 composition
+
+```{r}
+Annotation_cell_prop = Annotation_data %>%
+  mutate(CoreID = factor(CoreID)) %>%
+  group_by(TMA, CoreID, EBV, Annotation) %>%
+  summarize(Count = n(), .groups = "drop") %>%
+  pivot_wider(names_from = Annotation, values_from = Count) %>%
+  mutate(across(where(is.numeric), ~replace_na(., 0))) %>%
+  rowwise() %>%
+  mutate(RowTotal = sum(c_across(where(is.numeric)))) %>%
+  mutate(across(where(is.numeric), ~ . / RowTotal)) %>%
+  ungroup() %>%
+  select(-RowTotal)
+
+# Tumor
+#pdf("/mnt/nfs/home/yaoyuyeo/Hodgkin_MIBI/RevisionAnnotations/Cellprop_tumor.pdf")
+Annotation_cell_prop %>%
+  mutate(plot = paste0(TMA, CoreID, EBV)) %>%
+  ggplot(aes(x = fct_reorder(plot, Tumor), y = Tumor, fill = EBV)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("pos" = "orange", "neg" = "green")) +
+  theme_minimal()
+#dev.off()
+
+# CD8 T
+#pdf("/mnt/nfs/home/yaoyuyeo/Hodgkin_MIBI/RevisionAnnotations/Cellprop_CD8.pdf")
+Annotation_cell_prop %>%
+  mutate(plot = paste0(TMA, CoreID, EBV)) %>%
+  ggplot(aes(x = fct_reorder(plot, `CD8 T`), y = `CD8 T`, fill = EBV)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("pos" = "orange", "neg" = "green")) +
+  theme_minimal()
+#dev.off()
+```
+
+## Figure 7D: % HRS-adj that are CD8
+
+```{r}
+Tumor_adj = Annotation_data %>%
+  dplyr::filter(Annotation == "Tumor") %>%
+  left_join(Adjacent_data, by = c("TMA", "CoreID", "EBV", "cellLabel")) %>%
+  dplyr::select(-c(two_hop, Annotation)) %>%
+  mutate(one_hop = str_extract_all(one_hop, "\\d+"),
+         one_hop = map(one_hop, as.numeric)) %>%
+  unnest(one_hop) %>%
+  rename("cellLabel_tumor" = "cellLabel") %>%
+  left_join(Annotation_data, by = c("TMA", "CoreID", "EBV", "one_hop" = "cellLabel"))
+
+### ggplot
+Tumor_adj %>%
+  group_by(TMA, CoreID, EBV, cellLabel_tumor) %>%
+  summarize(CD8_percent = 100 * mean(Annotation == "CD8 T"),
+            .groups = "drop") %>%
+  pivot_longer(cols = ends_with("_percent"), names_to = "CellType", values_to = "Percent") %>%
+  ggplot(aes(x = factor(EBV, levels = c("pos", "neg")), y = Percent, fill = EBV)) +
+  geom_bar(stat = "summary", fun = mean, position = position_dodge(width = 0.8)) +
+  scale_fill_manual(values = c("pos" = "orange", "neg" = "green")) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               position = position_dodge(width = 0.8), width = 0.2, color = "black") +
+  labs(x = "EBV Status", y = "Percent") +
+  theme_minimal()
+
+### stat test
+Tumor_adj %>%
+  group_by(TMA, CoreID, EBV, cellLabel_tumor) %>%
+  summarize(CD8_percent = 100 * mean(Annotation == "CD8 T"), .groups = "drop") %>%
+  wilcox.test(CD8_percent ~ EBV, data = .)
+```
+
+## Figure 7D: Mean spots for HRS-adjacent CD8
+
+```{r}
+# CD8 with spots
+CD8_with_spot = PLA_data %>%
+  group_by(TMA, CoreID, EBV, CD8_cellid) %>%
+  summarize(Spot_count = n(), .groups = "drop")
+
+# HRS adj with spots
+Tumor_adj_spots = Tumor_adj %>%
+  left_join(CD8_with_spot, by = c("TMA", "CoreID", "EBV", "one_hop" = "CD8_cellid")) %>%
+  replace_na(list(Spot_count = 0))
+
+# wrangle df
+df_bar = Tumor_adj_spots %>%
+  group_by(TMA, CoreID, EBV, cellLabel_tumor) %>%
+  summarize(avg_spots_per_CD8 = mean(Spot_count[Annotation == "CD8 T"], na.rm = TRUE),
+            .groups = "drop") %>%
+  replace_na(list(avg_spots_per_CD8 = 0)) %>%
+  group_by(EBV) %>%
+  summarize(
+  mean_spots = mean(avg_spots_per_CD8),
+  se_spots = sd(avg_spots_per_CD8) / sqrt(n()),
+  .groups = "drop")
+
+### ggplot
+ggplot(df_bar, aes(x = factor(EBV, levels = c("pos", "neg")), y = mean_spots, fill = EBV)) +
+  geom_col(width = 0.8) +
+  geom_errorbar(aes(ymin = mean_spots - se_spots, ymax = mean_spots + se_spots), width = 0.2) +
+  scale_fill_manual(values = c("pos" = "orange", "neg" = "green")) +
+  theme_minimal() +
+  labs(x = "EBV Status",
+       y = "Average Spots")
+
+### stat test
+Tumor_adj_spots %>%
+  group_by(TMA, CoreID, EBV, cellLabel_tumor) %>%
+  summarize(avg_spots_per_CD8 = mean(Spot_count[Annotation == "CD8 T"], na.rm = TRUE),
+            .groups = "drop") %>%
+  replace_na(list(avg_spots_per_CD8 = 0)) %>%
+  wilcox.test(avg_spots_per_CD8 ~ EBV, data = .)
+```
+
+## Figure 7E: HRS-adj vs HRS-nonadj within EBV+ or EBV-
+
+```{r}
+# map cell neighbors
+Adjacent_Tumor = Annotation_data %>%
+  dplyr::filter(Annotation == "Tumor") %>%
+  left_join(Adjacent_data, by = c("TMA", "CoreID", "EBV", "cellLabel")) %>%
+  dplyr::select(-two_hop) %>%
+  mutate(one_hop = str_extract_all(one_hop, "\\d+"),
+         one_hop = map(one_hop, as.numeric)) %>%
+  unnest(one_hop) %>%
+  mutate(Neighbor = "yes")
+
+Adjacent_Tumor_Fxn = Functional_data %>%
+  left_join((Adjacent_Tumor %>% dplyr::select(-c(Annotation, cellLabel))),
+            by = c("TMA", "CoreID", "EBV", "cellLabel" = "one_hop")) %>%
+  mutate(Neighbor = case_when(Neighbor == "yes" ~ "yes",
+                              TRUE ~ "no"))
+
+# ebv-positive
+df_ebvplot = Adjacent_Tumor_Fxn %>%
+  dplyr::filter(Annotation == "CD8 T",
+                EBV == "pos") %>% ########## switch pos or neg here ##########
+  group_by(Neighbor) %>%
+  summarize(
+    Ki67 = (Ki67_markerMean),
+    GzmB = (GzmB_markerMean),
+    CD45RO = (CD45RO_markerMean),
+    LAG3 = (LAG3.200_markerMean),
+    PD1 = (PD1_markerMean),
+    Tox = (Tox.200_markerMean),
+    .groups = "drop"
+  )
+
+df_ebvplot_df = df_ebvplot %>%
+  pivot_longer(cols = -c(Neighbor), names_to = "marker", values_to = "value") %>%
+  group_by(marker) %>%
+  mutate(population_mean = mean(value, na.rm = TRUE),
+         population_sd = sd(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(Neighbor, marker) %>%
+  summarize(group_mean = mean(value, na.rm = TRUE),
+            population_mean = first(population_mean),
+            population_sd = first(population_sd),
+            z_score = (group_mean - population_mean) / population_sd,
+            .groups = "drop") %>%
+  dplyr::select(Neighbor, marker, z_score) %>%
+  pivot_wider(names_from = marker, values_from = z_score) %>%
+  column_to_rownames("Neighbor") %>%
+  as.matrix()
+
+### ggplot
+Heatmap(
+  df_ebvplot_df,
+  name = "Z-score",
+  col = colorRamp2(c(-0.5, 0, 0.5), c("blue", "white", "red")),
+  cluster_rows = FALSE,
+  cluster_columns = TRUE,
+  row_names_side = "left"
+)
+
+### stat_test
+df_ebvplot %>%
+  pivot_longer(cols = -c(Neighbor), names_to = "marker", values_to = "value") %>%
+  group_by(marker) %>%
+  summarize(
+    mean_adj = mean(value[Neighbor == "yes"], na.rm = TRUE),
+    mean_nonadj = mean(value[Neighbor == "no"], na.rm = TRUE),
+    p_value = wilcox.test(value ~ Neighbor)$p.value,
+    .groups = "drop"
+  ) %>%
+  mutate(p_adj = p.adjust(p_value, method = "BH"))
+```
+
+## Figure 7E: EBV+ vs EBV- HRS-adj
+
+```{r}
+df_ebv = Tumor_adj %>%
+  left_join(Functional_data, by = c("TMA", "CoreID", "EBV", "one_hop" = "cellLabel", "Annotation")) %>%
+  group_by(EBV, cellLabel_tumor) %>%
+  summarize(
+    n_cd8 = sum(Annotation == "CD8 T"),
+    Ki67 = if (n_cd8 > 0) mean(Ki67_markerMean[Annotation == "CD8 T"]) else NA_real_,
+    GzmB = if (n_cd8 > 0) mean(GzmB_markerMean[Annotation == "CD8 T"]) else NA_real_,
+    CD45RO = if (n_cd8 > 0) mean(CD45RO_markerMean[Annotation == "CD8 T"]) else NA_real_,
+    LAG3 = if (n_cd8 > 0) mean(LAG3.200_markerMean[Annotation == "CD8 T"]) else NA_real_,
+    PD1 = if (n_cd8 > 0) mean(PD1_markerMean[Annotation == "CD8 T"]) else NA_real_,
+    Tox = if (n_cd8 > 0) sum(Tox_thres_otsu[Annotation == "CD8 T"] == 1) / n_cd8 * 100 else 0,
+    .groups = "drop"
+  ) %>%
+  dplyr::select(-n_cd8, -cellLabel_tumor)
+
+df_heatmap_z = df_ebv %>%
+  pivot_longer(cols = -c(EBV), names_to = "marker", values_to = "value") %>%
+  group_by(marker) %>%
+  mutate(population_mean = mean(value, na.rm = TRUE),
+         population_sd = sd(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(EBV, marker) %>%
+  summarize(group_mean = mean(value, na.rm = TRUE),
+            population_mean = first(population_mean),
+            population_sd = first(population_sd),
+            z_score = (group_mean - population_mean) / population_sd,
+            .groups = "drop") %>%
+  dplyr::select(EBV, marker, z_score) %>%
+  pivot_wider(names_from = marker, values_from = z_score) %>%
+  column_to_rownames("EBV") %>%
+  as.matrix()
+
+df_ebv %>%
+  pivot_longer(cols = -c(EBV), names_to = "marker", values_to = "value") %>%
+  group_by(marker) %>%
+  mutate(population_mean = mean(value, na.rm = TRUE),
+         population_sd = sd(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(EBV, marker) %>%
+  summarize(group_mean = mean(value, na.rm = TRUE),
+            population_mean = first(population_mean),
+            population_sd = first(population_sd),
+            z_score = (group_mean - population_mean) / population_sd,
+            .groups = "drop")
+
+### ggplot
+Heatmap(
+  df_heatmap_z,
+  name = "Z-score",
+  col = colorRamp2(c(-0.5, 0, 0.5), c("blue", "white", "red")),
+  cluster_rows = FALSE,
+  cluster_columns = TRUE,
+  row_names_side = "left",
+  column_names_rot = 45
+)
+#dev.off()
+
+### stat_test
+df_ebv %>%
+  pivot_longer(cols = -EBV, names_to = "marker", values_to = "value") %>%
+  dplyr::filter(!is.na(value)) %>%
+  group_by(marker) %>%
+  summarize(
+    mean_pos = mean(value[EBV == "pos"], na.rm = TRUE),
+    mean_neg = mean(value[EBV == "neg"], na.rm = TRUE),
+    p_value = wilcox.test(value ~ EBV)$p.value,
+    .groups = "drop"
+  ) %>%
+  mutate(p_adj = p.adjust(p_value, method = "BH"))
+```
+
+## Calculate Cohen's D
+
+```{r}
+
+test_df <- df_ebv %>% 
+  drop_na() %>% 
+  select(-Tox)
+
+cohen_d_by_marker <- function(df, group_col = "EBV",
+                              pos_label = "pos", neg_label = "neg",
+                              markers = NULL) {
+  stopifnot(group_col %in% names(df))
+
+  # pick numeric marker columns if not supplied
+  if (is.null(markers)) {
+    markers <- names(df)[vapply(df, is.numeric, logical(1L))]
+    markers <- setdiff(markers, group_col)
+  }
+
+  library(dplyr)
+  library(tidyr)
+  library(purrr)
+  
+  # helper to compute one marker
+  one_marker <- function(v, g) {
+    x_pos <- v[g == pos_label]
+    x_neg <- v[g == neg_label]
+    x_pos <- x_pos[is.finite(x_pos)]
+    x_neg <- x_neg[is.finite(x_neg)]
+    
+    n1 <- length(x_pos); n2 <- length(x_neg)
+    m1 <- mean(x_pos, na.rm = TRUE); m2 <- mean(x_neg, na.rm = TRUE)
+    s1 <- stats::sd(x_pos, na.rm = TRUE); s2 <- stats::sd(x_neg, na.rm = TRUE)
+    
+    # pooled SD (unbiased)
+    pooled_sd <- if ((n1 + n2 - 2) > 0) {
+      sqrt(((n1 - 1) * s1^2 + (n2 - 1) * s2^2) / (n1 + n2 - 2))
+    } else { NA_real_ }
+    
+    diff <- m1 - m2  # pos − neg
+    d <- if (!is.na(pooled_sd) && pooled_sd > 0) diff / pooled_sd else NA_real_
+    
+    tibble(
+      mean_pos = m1, mean_neg = m2,
+      diff = diff, pooled_sd = pooled_sd, cohen_d = d,
+      n_pos = n1, n_neg = n2
+    )
+  }
+
+  # classify effect size magnitude
+  classify_effect <- function(d) {
+    if (is.na(d)) return(NA_character_)
+    ad <- abs(d)
+    if (ad < 0.2) "Negligible"
+    else if (ad < 0.5) "Small"
+    else if (ad < 0.8) "Medium"
+    else "Large"
+  }
+
+  # apply to each marker
+  out <- map_dfr(markers, \(mk) {
+    cbind(marker = mk, one_marker(df[[mk]], df[[group_col]]))
+  }) %>%
+    relocate(marker, mean_pos, mean_neg, diff, pooled_sd, cohen_d, n_pos, n_neg) %>%
+    mutate(across(c(mean_pos, mean_neg, diff, pooled_sd, cohen_d),
+                  ~signif(.x, 4)),
+           effect_size_label = sapply(cohen_d, classify_effect))
+
+  # print results
+  print(out)
+  
+  invisible(out)
+}
+
+# ---- Example usage ----
+results <- cohen_d_by_marker(test_df, group_col = "EBV",
+                             pos_label = "pos", neg_label = "neg")
+# print(results)
+
+```
+
+## Figure 7F: LMP correlation
+
+```{r}
+df_ebv_lmp = Tumor_adj %>%
+  left_join(Functional_data, by = c("TMA", "CoreID", "EBV", "one_hop" = "cellLabel", "Annotation")) %>%
+  dplyr::filter(Annotation == "CD8 T") %>%
+  group_by(TMA, CoreID, EBV, cellLabel_tumor) %>%
+  summarize(
+    Ki67 = mean(Ki67_markerMean),
+    GzmB = mean(GzmB_markerMean),
+    CD45RO = mean(CD45RO_markerMean),
+    CD45RA = mean(CD45RA_markerMean),
+    LAG3 = mean(LAG3.200_markerMean),
+    PD1 = mean(PD1_markerMean),
+    Tox = mean(Tox.200_markerMean),
+    .groups = "drop"
+  ) %>%
+  left_join(Functional_data %>% dplyr::select("TMA", "CoreID", "EBV", "cellLabel", LMP1.200_markerMean),
+            by = c("TMA", "CoreID", "EBV", "cellLabel_tumor" = "cellLabel")) %>%
+  rename("LMP1" = "LMP1.200_markerMean") %>%
+  dplyr::filter(EBV == "pos")
+
+### ggplot
+df_ebv_lmp %>%
+  mutate(Score = CD45RO - CD45RA + Tox + LAG3 + PD1 - Ki67) %>%
+  # split into LMP1 high or low
+  left_join(LMP1_lookup, by = c("TMA", "CoreID")) %>%
+  mutate(EBV = if_else(is.na(LMP1.y), EBV, LMP1.y)) %>%
+  select(-LMP1.y) %>%
+  ggplot(aes(x = LMP1.x, y = Score, color = EBV)) +
+  geom_smooth(method = "lm") +
+  stat_cor(method = "spearman", label.x.npc = "left", label.y.npc = "top") +
+  scale_color_manual(values = c("LMP" = "maroon", "pos" = "orange")) +
+  theme_minimal()
+```
