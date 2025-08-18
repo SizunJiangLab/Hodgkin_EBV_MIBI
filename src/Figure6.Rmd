@@ -844,6 +844,115 @@ for (i in c("CD4mem", "CD4naive",   "CD8mem", "CD8naive")){
 }
 ```
 
+### Figure 6E
+
+```{r}
+
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(GSVA)
+
+df = read.csv('../../data/EBV_chl_batchcorrected-CPM-nNCGH_1500-K_11.csv') # row as sample column as features
+df = t(df)
+df = as.data.frame(df)
+colnames(df) = df[1,]
+df = df[-1,]
+rownames(df) = gsub('\\.', '-', rownames(df))
+
+# read in the meta data
+meta1 = read.csv('../../result/ebv_chl_meta.csv')
+meta_ebv = meta1[match(rownames(df), meta1$Sample_ID),]
+meta_ebv <- na.omit(meta_ebv)
+meta = meta_ebv
+
+## need to remove some samples since no coutns somehow
+sampname = rownames(df)
+meta = meta[meta$Sample_ID %in% sampname,]
+
+#### subset
+sampnametarget = meta$Sample_ID[meta$EBV != 'ons']# remove tonsil
+df = df[match(sampnametarget, sampname),]
+df_meta = meta[match(sampnametarget, meta$Sample_ID),]
+
+# add patient information??
+df_meta$patient = str_sub(df_meta$roi, start = 3, end = -4)
+df_meta$patient = gsub('\\.[0-9]', '', df_meta$patient)
+
+## add ROI_num
+df_meta$ROI_num = str_sub(df_meta$roi, start = 3, end = -2)
+df_meta$T_ind = 'non-T'
+df_meta$T_ind[df_meta$segment %in% c('CD4naive', 'CD4mem', 'CD8naive', 'CD8mem')] = 'T'
+df_meta$Tu_ind = 'non-Tu'
+df_meta$Tu_ind[df_meta$segment %in% c('Tumor')] = 'Tumor'
+
+
+df2 <- mutate_all(df, function(x) as.numeric(as.character(x)))
+df = df2
+
+prog_t_genes = c('BACH2', 'BCL6', 'CCR7', 'CD28', 'CXCL10', 'CXCR5', 'HIF1A', 'ID3', 'IL7R', 'LEF1', 'SATB1', 'SELL', 'TCF7', 'TNF', 'TNFSF14', 'XCL1')
+
+term_t_genes = c('CCL3', 'CCL4L2', 'CCL5', 'CD38', 'PRGFRN', 'CSF1', 'ENTPD1', 'FASLG', 'GZMA', 'GZMB', 'HAVCR2', 'ID2', 'IFNG', 'IL2RB', 'PDCD1', 'PRDM1', 'PRF1', 'TNFRSF9', 'TNFSF10')
+
+
+result = df_meta
+##### start calc
+#remotes::install_version("matrixStats", version = "1.1.0", repos = "http://cran.us.r-project.org")
+
+targetScore=gsva(t(df),list(prog_t_genes),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result['prog_tcell'] = t(targetScore)
+df_meta['prog_tcell'] = t(targetScore)
+
+targetScore=gsva(t(df),list(term_t_genes),method="ssgsea",ssgsea.norm=TRUE,verbose=T)
+result['term_tcell'] = t(targetScore)
+df_meta['term_tcell'] = t(targetScore)
+
+
+df2 = subset(df, df_meta$EBV == 'pos' & df_meta$Tu_ind == 'Tumor')
+df_meta2 = subset(df_meta, df_meta$EBV == 'pos' & df_meta$Tu_ind == 'Tumor')
+
+
+########### hclust only on positive sample - 2 clusters version
+
+ebvglist = c('EBER1', 'EBER2', 'LMP1', 'EBNA2', 'BALF1', 'BCRF1', 'BNLF2A', 'BNLF2B',
+             'BZLF1', 'RPMS1')
+df2_ebv = df2[,ebvglist]
+hc3 <- cutree(hclust(dist(df2_ebv, "euclidean")), 2)
+df_meta2$hc = hc3
+
+df_meta2 %>%  
+  group_by(hc, EBV) %>%  
+  summarize(Count = n()) -> test
+
+df_meta2$hc = as.factor(df_meta2$hc)
+
+### sample ids
+hc2 = df_meta2$ROI_num[df_meta2$hc == 2]
+hc1 = df_meta2$ROI_num[df_meta2$hc == 1]
+
+## get only t cell roi mean
+df_meta_t = subset(df_meta, df_meta$T_ind == 'T')
+df_meta_t %>% group_by(ROI_num) %>%
+  summarise(across(.cols = where(is.numeric),.fns = mean)) -> roilev
+roilev$group = 'neg'
+roilev$group[roilev$ROI_num %in% hc1] = 'ebv++'
+roilev$group[roilev$ROI_num %in% hc2] = 'ebv+'
+
+library(ggplot2)
+library(ggpubr)
+
+roilev$group = factor(roilev$group, levels = c('neg', 'ebv+', 'ebv++'))
+my_comparisons <- list( c("neg", "ebv+"), c("neg", "ebv++"), c("ebv+", "ebv++") )
+p = ggplot(roilev, aes(x = group, y = term_tcell, fill = group)) + geom_violin(trim=FALSE)+
+  geom_boxplot(width=0.05, fill = 'white')+
+  theme_classic() + ggtitle('term Tex, hclust 2') + 
+  stat_compare_means(comparisons = my_comparisons, method.args = list(alternative = "less"))
+ggsave('../plots/termTex_hclust2_v2.svg', width = 7, height = 5)
+p
+
+```
+
+
 ### Figure 6G
 
 #### Required Libraries
