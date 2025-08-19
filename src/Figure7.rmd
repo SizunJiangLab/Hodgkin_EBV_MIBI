@@ -494,7 +494,8 @@ library(dplyr)
 library(Seurat)
 library(tibble)
 
-cos = readRDS('./cHL.CosMx1k.rds')
+cos = readRDS('./cHL.CosMx1k.seuratobject.rds')
+cos = subset(cos, EBV == "EBV+")
 metadf = cos@meta.data
 #write.csv(metadf, './cosmx_metadf_EBVp.csv')
 dim(metadf) #133081     22
