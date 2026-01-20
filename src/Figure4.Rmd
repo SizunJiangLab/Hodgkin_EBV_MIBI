@@ -1,528 +1,440 @@
 ---
-title: "Figure 4"
+title: "Figure 4: Spatial Analysis and Immune Profiling"
 author: "Huaying Qiu"
-date: "2023-12-20"
-output: html_document
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: cosmo
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width=10, fig.height=8)
+
 ```
 
+# 1. Environment Setup
 
-```{r}
+## 1.1 Libraries
 
-hodgkin_annotated <- read_csv('~/Hodgkin_github/data/hodgkin_DFCI_noID.csv')
-
-hodgkin_annotated <- hodgkin_annotated %>% 
-  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative')))
-
-
+```{r libraries}
 library(tidyverse)
-library(ComplexHeatmap)
-
-```
-
-
-## Figure 4
-
-### Figure 4B
-
-
-```{r}
-
-
-# Plot out the cells in phenomaps
-
 library(raster)
-
-seg_list <- list.files('~/hodgkinebvmibi/20220823_cHL-DFCI_Production_M060/', full.names = TRUE, recursive = TRUE, pattern = 'segmentationMap.tif')
-
-# Exchange position of masks of the two LN
-
-seg_list <- replace(seg_list, c(31,32), seg_list[c(32,31)])
-
-# Read in segmentation mask
-
-mask_list <- map(seg_list, function(x){
-  as.matrix(raster(x))
-})
-
-
-# Join the bins and scores to the original data
-
-bin_score_df <- hodgkin_tumor_score_100um %>% 
-  dplyr::select(pointNum, cellLabel, centroidX, centroidY, score, bin, bin_deriva)
-
-
-hodgkin_annotated <- hodgkin_annotated %>% 
-  left_join(bin_score_df, by = c('pointNum', 'cellLabel', 'centroidX', 'centroidY'))
-
-hodgkin_annotated %>% 
-  dplyr::select(Annotation, bin, bin_deriva) %>% 
-  filter(Annotation == 'Tumor')
-
-hodgkin_annotated <- hodgkin_annotated %>% 
-  mutate(bin = ifelse(is.na(bin), 'Tumor', bin),
-         bin_deriva = ifelse(is.na(bin_deriva), 'Tumor', bin_deriva))
-
-
-
-
-```
-
-
-```{r}
-
-
-new_annotation <- hodgkin_annotated %>% 
-  dplyr::filter(is.na(fov)) %>% 
-  dplyr::select(pointNum, patientID, region, bin_deriva, cellLabel)
-
-pointNum_ID_region_LUT <- new_annotation %>% 
-  group_by(pointNum, patientID, region) %>% 
-  dplyr::count() %>% 
-  dplyr::select(-n)
-
-celltype_plot <- function(point_num, seg_list, annotation, cell_label, mypalette, pointNumLUT, verbose = FALSE, out = FALSE, out_path = NULL, print_fig = FALSE){
-  require(reshape2)
-  require(purrr)
-  require(ggplot2)
-  require(dplyr)
-  require(tidyr)
-  # Get segmentation matrix
-  seg_mat <- seg_list[[point_num - 2]]
-  # Get segmentation outline
-  #seg_outline <- outline[[point_num - 2]]
-  # Get cell types for this point. Stored as a list
-  cell_type <- as.list(unique(annotation))
-  # Store cell label of each cell type in a list
-  type_label_LUT <- map(cell_type, function(x){
-    cell_label[annotation == x]
-  })
-  # Name list by cell type
-  names(type_label_LUT) <- unique(annotation)
-  # Reshape segmentation matrix and add a column called pixel type
-  mat_long <- melt(seg_mat)
-  mat_long <- mat_long %>% 
-    mutate(pixel_type = rep(NA, nrow(mat_long)))
-  # outline_long <- melt(seg_outline)
-  # outline_long <- outline_long %>%
-  # mutate(pixel = ifelse(value == 1, 'outline', NA))
-  # Fill in pixel type by cell type
-  for (i in 1:length(unique(annotation))){
-    mat_long$pixel_type[mat_long$value %in% type_label_LUT[[i]]] <- unique(annotation)[i]
-  }
-  # Match cell type and color to make sure color is uniform across the board
-  color <- mypalette$color[match(unique(annotation), mypalette$celltype)]
-  # Match pointNum, patientID, and region
-  plot_title <- paste0(pointNumLUT$patientID[pointNumLUT$pointNum == point_num], '_', pointNumLUT$region[pointNumLUT$pointNum == point_num])
-  # Plot 
-  p <- ggplot()+
-    #geom_tile(data = outline_long, aes(x = Var2, y = -Var1, fill = as.factor(pixel))) + 
-    #scale_fill_manual(values = c('#FFFFFF'), na.value = 'white', na.translate = FALSE) + 
-    geom_raster(data = mat_long, aes(x = Var2, y = -Var1, fill = pixel_type)) + 
-    scale_fill_manual('Bin', values = c('Tumor' = '#E41A1C', 'Tumor Dense' = '#f6adff', 'Tumor Sparse' = '#e1d936', 'Far' = '#52bcaa'), na.value = 'white', drop = FALSE) + 
-    #scale_fill_viridis_d() + 
-    #labs(title = paste0(plot_title), fill = 'Cell Types') + 
-    theme(axis.title = element_blank(),
-          axis.ticks = element_blank(),
-          axis.line = element_blank(),
-          axis.text = element_blank(),
-          panel.background = element_blank(),
-          panel.grid = element_blank(),
-          legend.position = 'none')
-  # Show plot
-  if (verbose){
-    cat('Plot for PointNum ', point_num, ' completed. \n')
-  }
-  if (out){
-    ggsave(filename = paste0(out_path, plot_title, '.png'), plot = p, device = 'png', height = 9, width = 9, units = 'in', dpi = 320)
-    #legend_plot <- cowplot::get_legend(p)
-    #ggsave(filename = paste0(out_path, 'legend.pdf'), plot = legend_plot, device = 'pdf', dpi = 320)
-  }
-  if (print_fig){
-    print(p)
-  }
-}
-
-```
-
-
-```{r}
-
-
+library(ComplexHeatmap)
+library(reshape2)
+library(ggplot2)
+library(ggpubr)
+library(class)
 library(foreach)
-
-mypalette <- data.frame(celltype = c('Tumor', 'Tumor Dense', 'Tumor Sparse', 'Far'),
-                        color = c('#E41A1C', '#a03f38', '#1cf1a3', '#94d3bc'))
-
-cl <- parallel::makeCluster(20)
-doParallel::registerDoParallel(cl)
-
-foreach (i = unique(new_annotation$pointNum)) %dopar% {
-  celltype_plot(i, mask_list, new_annotation$bin_deriva[new_annotation$pointNum == i], new_annotation$cellLabel[new_annotation$pointNum == i], mypalette = mypalette, pointNumLUT = pointNum_ID_region_LUT, verbose = TRUE, out = TRUE, out_path = '~/hodgkinebvmibi/paper_figures/bin_map_tangent_no_legend/')
-}
-
-parallel::stopCluster(cl)
+library(doParallel)
+library(cowplot)
 
 ```
 
+## 1.2 Configuration (Paths & Constants)
 
+Please update the paths below to match your local environment before running.
 
-```{r}
+```{r config}
+# File Paths
+PATHS <- list(
+  annotated_data = "~/Hodgkin_github/data/hodgkin_DFCI_noID.csv",
+  tumor_score    = "/mnt/nfs/home/huayingqiu/hodgkinebvmibi/anchor_data/tumor_effect_score_100um.csv",
+  seg_dir        = "~/hodgkinebvmibi/20220823_cHL-DFCI_Production_M060/",
+  output_dir     = "~/hodgkinebvmibi/paper_figures/"
+)
 
-new_annotation <- hodgkin_annotated %>% 
-  dplyr::filter(!is.na(fov)) %>% 
-  dplyr::select(pointNum, patientID, fov, bin_deriva, cellLabel)
+# Visualization Palettes
+PALETTES <- list(
+  # Discrete bins for spatial maps
+  bin_discrete = c(
+    'Tumor'        = '#E41A1C', 
+    'Tumor Dense'  = '#f6adff', 
+    'Tumor Sparse' = '#e1d936', 
+    'Far'          = '#52bcaa'
+  ),
+  # Discrete scores for spatial maps
+  score_discrete = c(
+    'Tumor'          = '#E41A1C', 
+    'Tumor Proximal' = '#393B79', 
+    'Tumor Distal'   = '#5254A3', 
+    'Far'            = '#6B6ECF'
+  ),
+  # EBV Status colors
+  ebv = c(
+    'Positive' = '#D55E00', 
+    'Negative' = '#009E73'
+  )
+)
 
-pointNum_ID_region_LUT <- new_annotation %>% 
-  group_by(pointNum, patientID, fov) %>% 
-  dplyr::count() %>% 
-  dplyr::select(-n)
+```
 
-celltype_plot <- function(point_num, seg_list, annotation, cell_label, mypalette, pointNumLUT, verbose = FALSE, out = FALSE, out_path = NULL, print_fig = FALSE){
+# 2. Helper Functions
+
+## 2.1 Data Ingestion
+
+```{r func_data_loading}
+#' Load and Merge Clinical and Score Data
+load_project_data <- function(annot_path, score_path) {
+  # Load Annotation Data
+  df_annot <- read_csv(annot_path, show_col_types = FALSE) %>% 
+    mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative')))
+  
+  # Load Tumor Effect Score Data
+  df_score <- read_csv(score_path, show_col_types = FALSE)
+  
+  # Merge
+  merged_df <- df_score %>% 
+    left_join(df_annot, by = c('pointNum', 'cellLabel', 'centroidX', 'centroidY'))
+  
+  return(merged_df)
+}
+
+#' Load and Organize Segmentation Masks
+#' Handles specific file ordering fixes required for the dataset
+prepare_masks <- function(seg_dir) {
+  seg_files <- list.files(seg_dir, full.names = TRUE, recursive = TRUE, pattern = 'segmentationMap.tif')
+  
+  # Specific fix for swapping LN masks (Points 31/32)
+  if(length(seg_files) >= 32) {
+    seg_files <- replace(seg_files, c(31,32), seg_files[c(32,31)])
+  }
+  
+  # Read masks into a list of matrices
+  mask_list <- map(seg_files, ~as.matrix(raster(.x)))
+  return(mask_list)
+}
+
+#' Pre-process Data for Spatial Plotting
+#' Imputes missing bin values as 'Tumor'
+process_annotations_for_plotting <- function(main_df) {
+  processed_df <- main_df %>% 
+    mutate(
+      bin = ifelse(is.na(bin), 'Tumor', bin),
+      bin_deriva = ifelse(is.na(bin_deriva), 'Tumor', bin_deriva)
+    )
+  return(processed_df)
+}
+
+```
+
+## 2.2 Spatial Plotting
+
+```{r func_spatial_plotting}
+#' Universal Spatial Plotter
+#' Generates raster maps for either discrete bins or continuous scores
+#' 
+#' @param point_num Integer ID of the point/image
+#' @param seg_list List of segmentation matrices
+#' @param data_df Dataframe containing annotations
+#' @param fill_col String: Column name to map to fill color ('bin_deriva' or 'score')
+#' @param fill_type String: 'discrete' or 'continuous'
+#' @param palette Named vector or NA. Used if fill_type is discrete.
+#' @param mask_offset Integer: Offset to map pointNum to mask list index
+#' @param out_dir String: Directory to save files
+plot_spatial_map <- function(point_num, seg_list, data_df, fill_col, fill_type = "discrete", 
+                             palette = NULL, mask_offset = 2, out_dir = NULL) {
+  
   require(reshape2)
-  require(purrr)
   require(ggplot2)
-  require(dplyr)
-  require(tidyr)
-  # Get segmentation matrix
-  seg_mat <- seg_list[[point_num - 34]]
-  # Get segmentation outline
-  #seg_outline <- outline[[point_num - 2]]
-  # Get cell types for this point. Stored as a list
-  cell_type <- as.list(unique(annotation))
-  # Store cell label of each cell type in a list
-  type_label_LUT <- map(cell_type, function(x){
-    cell_label[annotation == x]
-  })
-  # Name list by cell type
-  names(type_label_LUT) <- unique(annotation)
-  # Reshape segmentation matrix and add a column called pixel type
+  
+  # Filter data for current point
+  current_data <- data_df %>% filter(pointNum == point_num)
+  if(nrow(current_data) == 0) return(NULL)
+  
+  # Metadata for title
+  pid <- unique(current_data$patientID)
+  region_or_fov <- if("fov" %in% names(current_data) && !all(is.na(current_data$fov))) {
+    unique(current_data$fov)
+  } else {
+    unique(current_data$region)
+  }
+  plot_title <- paste0(pid, '_', region_or_fov)
+  
+  # Get Mask
+  mask_idx <- point_num - mask_offset
+  if(mask_idx < 1 || mask_idx > length(seg_list)) return(NULL)
+  seg_mat <- seg_list[[mask_idx]]
+  
+  # Create LUT
+  lut <- current_data %>% dplyr::select(cellLabel, all_of(fill_col))
+  colnames(lut) <- c("cellLabel", "value_to_plot")
+  
+  # Melt and Map
   mat_long <- melt(seg_mat)
-  mat_long <- mat_long %>% 
-    mutate(pixel_type = rep(NA, nrow(mat_long)))
-  # outline_long <- melt(seg_outline)
-  # outline_long <- outline_long %>%
-  # mutate(pixel = ifelse(value == 1, 'outline', NA))
-  # Fill in pixel type by cell type
-  for (i in 1:length(unique(annotation))){
-    mat_long$pixel_type[mat_long$value %in% type_label_LUT[[i]]] <- unique(annotation)[i]
+  mat_long$fill_val <- lut$value_to_plot[match(mat_long$value, lut$cellLabel)]
+  
+  # Base Plot
+  p <- ggplot() +
+    geom_raster(data = mat_long, aes(x = Var2, y = -Var1, fill = fill_val)) +
+    theme_void() +
+    theme(legend.position = ifelse(fill_type == "continuous", "right", "none"))
+  
+  # Apply Scales
+  if (fill_type == "discrete") {
+    p <- p + scale_fill_manual(values = palette, na.value = "white", drop = FALSE)
+  } else {
+    p <- p + scale_fill_viridis_c(option = 'plasma', na.value = 'white') +
+      labs(fill = 'Score')
   }
-  # Match cell type and color to make sure color is uniform across the board
-  color <- mypalette$color[match(unique(annotation), mypalette$celltype)]
-  # Match pointNum, patientID, and region
-  plot_title <- paste0(pointNumLUT$patientID[pointNumLUT$pointNum == point_num], '_', pointNumLUT$fov[pointNumLUT$pointNum == point_num])
-  # Plot 
-  p <- ggplot()+
-    #geom_tile(data = outline_long, aes(x = Var2, y = -Var1, fill = as.factor(pixel))) + 
-    #scale_fill_manual(values = c('#FFFFFF'), na.value = 'white', na.translate = FALSE) + 
-    geom_raster(data = mat_long, aes(x = Var2, y = -Var1, fill = pixel_type)) + 
-    scale_fill_manual('Bin', values = c('Tumor' = '#E41A1C', 'Tumor Dense' = '#f6adff', 'Tumor Sparse' = '#e1d936', 'Far' = '#52bcaa'), na.value = 'white', drop = FALSE) + 
-    #scale_fill_viridis_d() + 
-    #labs(title = paste0(plot_title), fill = 'Cell Types') + 
-    theme(axis.title = element_blank(),
-          axis.ticks = element_blank(),
-          axis.line = element_blank(),
-          axis.text = element_blank(),
-          panel.background = element_blank(),
-          panel.grid = element_blank(),
-          legend.position = 'none')
-  # Show plot
-  if (verbose){
-    cat('Plot for PointNum ', point_num, ' completed. \n')
+  
+  # Save
+  if (!is.null(out_dir)) {
+    if(!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+    ggsave(filename = file.path(out_dir, paste0(plot_title, '.png')), 
+           plot = p, device = 'png', height = 9, width = 9, units = 'in', dpi = 320)
   }
-  if (out){
-    ggsave(filename = paste0(out_path, plot_title, '.png'), plot = p, device = 'png', height = 9, width = 9, units = 'in', dpi = 320)
-    #legend_plot <- cowplot::get_legend(p)
-    #ggsave(filename = paste0(out_path, 'legend.pdf'), plot = legend_plot, device = 'pdf', dpi = 320)
-  }
-  if (print_fig){
-    print(p)
-  }
+  
+  return(TRUE)
 }
 
 ```
 
+## 2.3 Exhaustion Analysis
 
-```{r}
-
-library(foreach)
-
-mypalette <- data.frame(celltype = c('Tumor', 'Tumor Dense', 'Tumor Sparse', 'Far'),
-                        color = c('#E41A1C', '#a03f38', '#1cf1a3', '#94d3bc'))
-
-cl <- parallel::makeCluster(20)
-doParallel::registerDoParallel(cl)
-
-foreach (i = unique(new_annotation$pointNum)) %dopar% {
-  celltype_plot(i, mask_list, new_annotation$bin_deriva[new_annotation$pointNum == i], new_annotation$cellLabel[new_annotation$pointNum == i], mypalette = mypalette, pointNumLUT = pointNum_ID_region_LUT, verbose = TRUE, out = TRUE, out_path = '~/hodgkinebvmibi/paper_figures/bin_map_tangent_singleFOV_no_legend/')
+```{r func_exhaustion}
+#' Calculate Immune Exhaustion Scores (Score V3)
+calculate_exhaustion_scores <- function(df) {
+  # Filter relevant immune cells
+  immune_df <- df %>% 
+    filter(Annotation %in% c('CD4', 'CD8', 'DC', 'M1', 'M2', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg'))
+  
+  # Calculate Score V3 based on markers
+  immune_df <- immune_df %>% 
+    mutate(exhaustion_score_v3 = case_when(
+      Annotation %in% c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg') ~ 
+        CD45RO - CD45RA + Tox + `PD-1` - `Ki-67` + Lag3,
+      Annotation %in% c('DC', 'M1', 'M2') ~ 
+        `PD-L1` - `Ki-67`,
+      TRUE ~ NA_real_
+    ))
+  
+  return(immune_df)
 }
 
-parallel::stopCluster(cl)
-
-```
-
-
-```{r}
-
-
-new_annotation <- hodgkin_annotated %>% 
-  dplyr::filter(is.na(fov)) %>% 
-  dplyr::select(pointNum, patientID, region, score, cellLabel)
-
-pointNum_ID_region_LUT <- new_annotation %>% 
-  group_by(pointNum, patientID, region) %>% 
-  dplyr::count() %>% 
-  dplyr::select(-n)
-
-celltype_plot <- function(point_num, seg_list, score, cell_label, mypalette, pointNumLUT, verbose = FALSE, out = FALSE, out_path = NULL, print_fig = FALSE){
-  require(reshape2)
-  require(purrr)
-  require(ggplot2)
-  require(dplyr)
-  require(tidyr)
-  # Get segmentation matrix
-  seg_mat <- seg_list[[point_num - 2]]
-  # Get segmentation outline
-  #seg_outline <- outline[[point_num - 2]]
-  # tumor score LUT
-  tumor_score_LUT <- data.frame(cellLabel = cell_label,
-                                tumor_score = score)
-  # Reshape segmentation matrix and add a column called pixel type
-  mat_long <- melt(seg_mat)
-  mat_long <- mat_long %>% 
-    mutate(pixel_score = rep(NA, nrow(mat_long)))
-  # outline_long <- melt(seg_outline)
-  # outline_long <- outline_long %>%
-  # mutate(pixel = ifelse(value == 1, 'outline', NA))
-  # Fill in pixel type by cell type
-  mat_long$pixel_score <- tumor_score_LUT$tumor_score[match(mat_long$value, tumor_score_LUT$cellLabel)]
-  # Match pointNum, patientID, and region
-  plot_title <- paste0(pointNumLUT$patientID[pointNumLUT$pointNum == point_num], '_', pointNumLUT$region[pointNumLUT$pointNum == point_num])
-  # Plot 
-  p <- ggplot()+
-    #geom_tile(data = outline_long, aes(x = Var2, y = -Var1, fill = as.factor(pixel))) + 
-    #scale_fill_manual(values = c('#FFFFFF'), na.value = 'white', na.translate = FALSE) + 
-    geom_raster(data = mat_long, aes(x = Var2, y = -Var1, fill = pixel_score)) + 
-    #scale_fill_manual('Bin', values = c('Tumor' = '#E41A1C', 'Tumor Proximal' = '#756BB1', 'Tumor Distal' = '#3182BD', 'Far' = '#31A354'), na.value = 'white', drop = FALSE) + 
-    scale_fill_viridis_c(option = 'plasma', na.value = 'white') + 
-    labs(fill = 'Tumor Score') + 
-    #labs(title = paste0(plot_title), fill = 'Cell Types') + 
-    theme(axis.title = element_blank(),
-          axis.ticks = element_blank(),
-          axis.line = element_blank(),
-          axis.text = element_blank(),
-          panel.background = element_blank(),
-          panel.grid = element_blank(),
-          legend.position = 'right',
-          legend.key.size = unit(1, 'cm'))
-  # Show plot
-  if (verbose){
-    cat('Plot for PointNum ', point_num, ' completed. \n')
-  }
-  if (out){
-    ggsave(filename = paste0(out_path, plot_title, '.png'), plot = p, device = 'png', height = 9, width = 9, units = 'in', dpi = 320)
-    #legend_plot <- cowplot::get_legend(p)
-    #ggsave(filename = paste0(out_path, 'legend.pdf'), plot = legend_plot, device = 'pdf', dpi = 320)
-  }
-  if (print_fig){
-    print(p)
-  }
-}
-
-
-```
-
-
-```{r}
-
-library(foreach)
-
-mypalette <- data.frame(celltype = c('Tumor', 'Tumor Proximal', 'Tumor Distal', 'Far'),
-                        color = c('#E41A1C', '#393B79', '#5254A3', '#6B6ECF'))
-
-cl <- parallel::makeCluster(20)
-doParallel::registerDoParallel(cl)
-
-foreach (i = unique(new_annotation$pointNum)) %dopar% {
-  celltype_plot(i, mask_list, new_annotation$score[new_annotation$pointNum == i], new_annotation$cellLabel[new_annotation$pointNum == i], mypalette = mypalette, pointNumLUT = pointNum_ID_region_LUT, verbose = TRUE, out = TRUE, out_path = '~/hodgkinebvmibi/paper_figures/score_map_072723/')
-}
-
-parallel::stopCluster(cl)
-
-```
-
-```{r}
-
-new_annotation <- hodgkin_annotated %>% 
-  dplyr::filter(!is.na(fov)) %>% 
-  dplyr::select(pointNum, patientID, fov, score, cellLabel)
-
-pointNum_ID_region_LUT <- new_annotation %>% 
-  group_by(pointNum, patientID, fov) %>% 
-  dplyr::count() %>% 
-  dplyr::select(-n)
-
-celltype_plot <- function(point_num, seg_list, score, cell_label, mypalette, pointNumLUT, verbose = FALSE, out = FALSE, out_path = NULL, print_fig = FALSE){
-  require(reshape2)
-  require(purrr)
-  require(ggplot2)
-  require(dplyr)
-  require(tidyr)
-  # Get segmentation matrix
-  seg_mat <- seg_list[[point_num - 34]]
-  # Get segmentation outline
-  #seg_outline <- outline[[point_num - 2]]
-  # tumor score LUT
-  tumor_score_LUT <- data.frame(cellLabel = cell_label,
-                                tumor_score = score)
-  # Reshape segmentation matrix and add a column called pixel type
-  mat_long <- melt(seg_mat)
-  mat_long <- mat_long %>% 
-    mutate(pixel_score = rep(NA, nrow(mat_long)))
-  # outline_long <- melt(seg_outline)
-  # outline_long <- outline_long %>%
-  # mutate(pixel = ifelse(value == 1, 'outline', NA))
-  # Fill in pixel type by cell type
-  mat_long$pixel_score <- tumor_score_LUT$tumor_score[match(mat_long$value, tumor_score_LUT$cellLabel)]
-  # Match pointNum, patientID, and region
-  plot_title <- paste0(pointNumLUT$patientID[pointNumLUT$pointNum == point_num], '_', pointNumLUT$fov[pointNumLUT$pointNum == point_num])
-  # Plot 
-  p <- ggplot()+
-    #geom_tile(data = outline_long, aes(x = Var2, y = -Var1, fill = as.factor(pixel))) + 
-    #scale_fill_manual(values = c('#FFFFFF'), na.value = 'white', na.translate = FALSE) + 
-    geom_raster(data = mat_long, aes(x = Var2, y = -Var1, fill = pixel_score)) + 
-    #scale_fill_manual('Bin', values = c('Tumor' = '#E41A1C', 'Tumor Proximal' = '#756BB1', 'Tumor Distal' = '#3182BD', 'Far' = '#31A354'), na.value = 'white', drop = FALSE) + 
-    scale_fill_viridis_c(option = 'plasma', na.value = 'white') + 
-    labs(fill = 'Tumor Score') + 
-    #labs(title = paste0(plot_title), fill = 'Cell Types') + 
-    theme(axis.title = element_blank(),
-          axis.ticks = element_blank(),
-          axis.line = element_blank(),
-          axis.text = element_blank(),
-          panel.background = element_blank(),
-          panel.grid = element_blank(),
-          legend.position = 'right',
-          legend.key.size = unit(1, 'cm'))
-  # Show plot
-  if (verbose){
-    cat('Plot for PointNum ', point_num, ' completed. \n')
-  }
-  if (out){
-    ggsave(filename = paste0(out_path, plot_title, '.png'), plot = p, device = 'png', height = 9, width = 9, units = 'in', dpi = 320)
-    #legend_plot <- cowplot::get_legend(p)
-    #ggsave(filename = paste0(out_path, 'legend.pdf'), plot = legend_plot, device = 'pdf', dpi = 320)
-  }
-  if (print_fig){
-    print(p)
-  }
-}
-
-```
-
-
-```{r}
-
-library(foreach)
-
-mypalette <- data.frame(celltype = c('Tumor', 'Tumor Proximal', 'Tumor Distal', 'Far'),
-                        color = c('#E41A1C', '#393B79', '#5254A3', '#6B6ECF'))
-
-cl <- parallel::makeCluster(20)
-doParallel::registerDoParallel(cl)
-
-foreach (i = unique(new_annotation$pointNum)) %dopar% {
-  celltype_plot(i, mask_list, new_annotation$score[new_annotation$pointNum == i], new_annotation$cellLabel[new_annotation$pointNum == i], mypalette = mypalette, pointNumLUT = pointNum_ID_region_LUT, verbose = TRUE, out = TRUE, out_path = '~/hodgkinebvmibi/paper_figures/score_map_singleFOV_073123/')
-}
-
-parallel::stopCluster(cl)
-
-```
-
-
-
-### Figure 4C
-
-
-```{r}
-
-exhaustion_df <- hodgkin_annotated %>% 
-  dplyr::filter(Annotation %in% c('CD4', 'CD8', 'DC', 'M1', 'M2', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg'))
-
-
-exhaustion_df <- exhaustion_df %>% 
-  mutate(exhaustion_score_v3 = case_when(Annotation %in% c('CD4', 'CD8', 'Cytotoxic CD4', 'Cytotoxic CD8', 'Treg') ~ CD45RO - CD45RA + Tox + `PD-1` - `Ki-67` + Lag3,
-                                         Annotation %in% c('DC', 'M1', 'M2') ~ `PD-L1` - `Ki-67`))
-
-```
-
-
-```{r}
-
-
-for (j in unique(exhaustion_df$Annotation)){
+#' Plot Paired Exhaustion Trends
+plot_exhaustion_trends <- function(df, output_path) {
   
-  celltype_data <- exhaustion_df %>% 
-    filter(Annotation == j) %>% 
-    filter(bin_deriva != 'Far')
+  cell_types <- unique(df$Annotation)
   
-  if (nrow(celltype_data) <= 1) {
-    next
-  } 
-  
-  summary_data <- celltype_data %>% 
-    dplyr::select(pointNum, bin_deriva, ebv_status, exhaustion_score_v3, cellLabel) %>% 
-    group_by(pointNum, bin_deriva, ebv_status) %>% 
-    summarise(score_avg = mean(exhaustion_score_v3))
-  
-  
-
-  # p <- summary_data %>%
-  # mutate(bin_deriva = factor(bin_deriva, levels = c('Tumor Dense', 'Tumor Sparse'))) %>%
-  # ggplot(aes(x = bin_deriva, y = score_avg, fill = ebv_status)) +
-  # #geom_violin(position = position_dodge(1), alpha = 0.5) +
-  # geom_boxplot(position = position_dodge(1), outlier.alpha = 0) +
-  # geom_jitter(position = position_jitterdodge(jitter.width = 0.15, dodge.width = 1)) +
-  # #geom_text_repel(data = summary_data, aes(x = bin, y = avg, label = n, color = ebv_status)) +
-  # stat_compare_means(aes(group = ebv_status), method = 'wilcox.test', label = 'p.signif', method.args = list(alternative = 'less')) +
-  # scale_fill_manual(values = c("#D55E00", "#009E73")) +
-  # scale_color_manual(values = c("#D55E00", "#009E73")) +
-  # theme_bw() +
-  # theme(axis.text = element_text(size = 12),
-  #       legend.position = 'none') +
-  # labs(y = 'Exhaustion Score', x = 'Bin')
-  
-  
-  p <- summary_data %>%
-  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative'))) %>% 
-  mutate(bin_deriva = factor(bin_deriva, levels = c('Tumor Dense', 'Tumor Sparse'))) %>% 
-  ungroup() %>% 
-  group_by(pointNum) %>% 
-  mutate(diff = lag(score_avg) - score_avg) %>% 
-  mutate(diff = ifelse(is.na(diff), diff[!is.na(diff)], diff)) %>% 
-  mutate(diff_0 = ifelse(diff > 0, 'greater', 'less')) %>% 
-  ggplot(aes(x = interaction(bin_deriva, ebv_status), y = score_avg, fill = bin_deriva)) +
-  #geom_violin(position = position_dodge(1), alpha = 0.5) +
-  geom_boxplot(outlier.alpha = 0) +
-  geom_point(alpha = 0.5) +
-  geom_line(aes(group = interaction(pointNum, ebv_status), linetype = diff_0, color = diff_0), alpha = 0.3) +
-  #geom_text(aes(label = pointNum)) + 
-  #geom_text_repel(data = summary_data, aes(x = bin, y = avg, label = n, color = ebv_status)) +
-  #stat_compare_means(aes(group = ebv_status), method = 'wilcox.test', label = 'p.signif', method.args = list(alternative = 'less')) +
-  scale_fill_manual(values = c('#f6adff', '#e1d936')) +
-  scale_color_manual(values = c("#f228a0", "#096013")) +
-  theme_bw() +
-  theme(axis.text = element_text(size = 12),
-        legend.position = 'none',
-        axis.text.x = element_text(angle = -30)) +
-  labs(y = 'Exhaustion Score', x = 'Bin')
-
+  for (ctype in cell_types) {
     
-    ggsave(filename = paste0('/mnt/nfs/home/huayingqiu/hodgkinebvmibi/paper_figures/figure4/figure4c/', j, '.pdf'), p, width = 5, height = 10, unit = 'cm', dpi = 320)
-  
+    celltype_data <- df %>% 
+      filter(Annotation == ctype, bin_deriva != 'Far')
+    
+    if (nrow(celltype_data) <= 1) next
+    
+    # Aggregate mean score per point/bin/status
+    summary_data <- celltype_data %>% 
+      group_by(pointNum, bin_deriva, ebv_status) %>% 
+      summarise(score_avg = mean(exhaustion_score_v3, na.rm = TRUE), .groups = "drop")
+    
+    # Calculate difference direction for line coloring
+    plot_data <- summary_data %>%
+      mutate(
+        ebv_status = factor(ebv_status, levels = c('Positive', 'Negative')),
+        bin_deriva = factor(bin_deriva, levels = c('Tumor Dense', 'Tumor Sparse'))
+      ) %>% 
+      group_by(pointNum) %>% 
+      arrange(bin_deriva) %>% 
+      mutate(diff = lag(score_avg) - score_avg) %>% 
+      fill(diff, .direction = "updown") %>%
+      mutate(diff_dir = ifelse(diff > 0, 'greater', 'less')) 
+    
+    # Plot
+    p <- ggplot(plot_data, aes(x = interaction(bin_deriva, ebv_status), y = score_avg, fill = bin_deriva)) +
+      geom_boxplot(outlier.alpha = 0) +
+      geom_point(alpha = 0.5) +
+      geom_line(aes(group = interaction(pointNum, ebv_status), linetype = diff_dir, color = diff_dir), alpha = 0.3) +
+      scale_fill_manual(values = c('#f6adff', '#e1d936')) +
+      scale_color_manual(values = c("#f228a0", "#096013")) +
+      theme_bw() +
+      theme(axis.text = element_text(size = 12),
+            legend.position = 'none',
+            axis.text.x = element_text(angle = -30, hjust = 0)) +
+      labs(y = 'Exhaustion Score', x = 'Bin', title = ctype)
+    
+    if(!dir.exists(output_path)) dir.create(output_path, recursive = TRUE)
+    ggsave(filename = file.path(output_path, paste0(ctype, '.pdf')), 
+           p, width = 5, height = 10, units = 'cm', dpi = 320)
+  }
 }
 
+```
+
+# 3. Main Analysis Execution
+
+## 3.1 Load and Process Data
+
+```{r load_data}
+merged_data <- load_project_data(PATHS$annotated_data, PATHS$tumor_score)
+processed_data <- process_annotations_for_plotting(merged_data)
+mask_list <- prepare_masks(PATHS$seg_dir)
+
+cat("Data Loaded Successfully.\n")
+cat("Total Rows:", nrow(processed_data), "\n")
+
+```
+
+## 3.2 Figure 4B: Generate Spatial Maps
+
+This section uses parallel processing to generate raster maps for bins and scores.
+
+```{r fig4b_maps, eval=FALSE}
+# Wrapper to orchestrate parallel plotting
+run_parallel_plotting <- function(data_subset, fill_col, fill_type, palette, offset, out_subdir) {
+  # Initialize Cluster
+  n_cores <- parallel::detectCores() - 2 # Use available cores minus 2
+  cl <- parallel::makeCluster(n_cores) 
+  doParallel::registerDoParallel(cl)
+  
+  message(paste("Starting parallel plot generation for:", out_subdir))
+  
+  foreach(i = unique(data_subset$pointNum), .packages = c('dplyr', 'ggplot2', 'reshape2')) %dopar% {
+    plot_spatial_map(
+      point_num = i,
+      seg_list = mask_list,
+      data_df = data_subset,
+      fill_col = fill_col,
+      fill_type = fill_type,
+      palette = palette,
+      mask_offset = offset,
+      out_dir = file.path(PATHS$output_dir, out_subdir)
+    )
+  }
+  
+  parallel::stopCluster(cl)
+  message(paste("Finished:", out_subdir))
+}
+
+# --- Execution ---
+
+# 1. Discrete Bin Maps (Whole Region)
+subset_region <- processed_data %>% filter(is.na(fov))
+run_parallel_plotting(subset_region, "bin_deriva", "discrete", PALETTES$bin_discrete, 2, "bin_map_tangent_no_legend")
+
+# 2. Discrete Bin Maps (Single FOV)
+subset_fov <- processed_data %>% filter(!is.na(fov))
+run_parallel_plotting(subset_fov, "bin_deriva", "discrete", PALETTES$bin_discrete, 34, "bin_map_tangent_singleFOV")
+
+# 3. Continuous Score Maps (Whole Region)
+run_parallel_plotting(subset_region, "score", "continuous", NULL, 2, "score_map_072723")
+
+# 4. Continuous Score Maps (Single FOV)
+run_parallel_plotting(subset_fov, "score", "continuous", NULL, 34, "score_map_singleFOV_073123")
+
+```
+
+## 3.3 Figure 4C: Immune Exhaustion
+
+```{r fig4c_exhaustion}
+exhaustion_df <- calculate_exhaustion_scores(processed_data)
+plot_exhaustion_trends(exhaustion_df, file.path(PATHS$output_dir, "figure4/figure4c/"))
+
+```
+
+## 3.4 KNN Imputation & Proliferation Analysis
+
+Imputing tumor spatial context (Dense/Sparse) for tumor cells based on neighboring cells using KNN.
+
+```{r knn_imputation}
+set.seed(123)
+
+# Define Reference Sets
+data_tumor <- processed_data %>% filter(Annotation == 'Tumor')
+data_nontumor <- processed_data %>% 
+  filter(Annotation != 'Tumor', bin_deriva %in% c('Tumor Dense', 'Tumor Sparse'))
+
+# Run KNN per point
+tumor_imputed_list <- list()
+
+for (i in unique(processed_data$pointNum)) {
+  train <- data_nontumor %>% filter(pointNum == i)
+  test  <- data_tumor %>% filter(pointNum == i)
+  
+  if(nrow(train) > 0 && nrow(test) > 0) {
+    knn_res <- knn(
+      train = train[, c('centroidX', 'centroidY')],
+      test  = test[, c('centroidX', 'centroidY')],
+      cl    = train$bin_deriva,
+      k     = 20
+    )
+    test$tumor_region <- knn_res
+    tumor_imputed_list[[as.character(i)]] <- test %>% dplyr::select(pointNum, cellLabel, tumor_region)
+  }
+}
+
+# Update Tumor Data
+tumor_region_lut <- do.call(rbind, tumor_imputed_list)
+data_tumor <- data_tumor %>% left_join(tumor_region_lut, by = c('pointNum', 'cellLabel'))
+
+```
+
+## 3.5 Proliferation Statistics (Ki-67)
+
+### Proportion of Proliferating Tumor Cells
+
+```{r prolif_proportion}
+PROLIF_THRESHOLD <- 0.2
+
+tumor_stats <- data_tumor %>% 
+  filter(tumor_region == 'Tumor Dense') %>% 
+  mutate(prolif = `Ki-67` > PROLIF_THRESHOLD) 
+
+# Boxplot of Proliferation Proportion by EBV Status
+p_prolif <- tumor_stats %>% 
+  group_by(pointNum, ebv_status, prolif) %>% 
+  tally() %>% 
+  group_by(pointNum, ebv_status) %>% 
+  mutate(prop = n / sum(n)) %>% 
+  filter(prolif == TRUE) %>% 
+  ggplot(aes(x = ebv_status, y = prop, fill = ebv_status)) + 
+  geom_boxplot(outlier.alpha = 0) + 
+  geom_point() +
+  stat_compare_means(comparisons = list(c('Positive', 'Negative')), 
+                     method.args = list(alternative = 'less'), label = 'p.signif') + 
+  scale_fill_manual(values = PALETTES$ebv) + 
+  theme_bw() +
+  labs(x = 'EBV Status', y = 'Proportion of Proliferating Tumor')
+
+print(p_prolif)
+
+```
+
+### Mean Ki-67 Intensity
+
+```{r prolif_intensity}
+p_intensity <- tumor_stats %>% 
+  filter(prolif) %>% 
+  group_by(pointNum, ebv_status) %>% 
+  summarise(mean_prolif = mean(`Ki-67`)) %>% 
+  ungroup() %>% 
+  mutate(ebv_status = factor(ebv_status, levels = c('Positive', 'Negative'))) %>% 
+  ggplot(aes(x = ebv_status, y = mean_prolif, fill = ebv_status)) + 
+  geom_boxplot(outlier.alpha = 0) + 
+  geom_point() + 
+  stat_compare_means(comparisons = list(c('Positive', 'Negative')),
+                     method.args = list(alternative = 'less'), label = 'p.signif') + 
+  theme_bw() + 
+  scale_fill_manual(values = PALETTES$ebv) +
+  labs(x = 'EBV Status', y = 'Mean Ki-67 Intensity')
+
+print(p_intensity)
+
+```
+
+### Ki-67 Histogram Distribution
+
+```{r prolif_histogram}
+p_hist <- tumor_stats %>% 
+  ggplot(aes(x = `Ki-67`, fill = as.factor(pointNum))) + 
+  geom_histogram(bins = 100, alpha = 0.5) + 
+  theme_bw() +
+  labs(fill = "Point ID", title = "Ki-67 Distribution across Points")
+
+print(p_hist)
 
 ```
