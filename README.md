@@ -23,5 +23,5 @@ The following is an overview of the code in this repository. Please note that si
 
 ## Data Availability
 
-The following is an 
+The raw data to reproduce the analysis is available on the following Zenodo repository:
 https://zenodo.org/records/16897608
