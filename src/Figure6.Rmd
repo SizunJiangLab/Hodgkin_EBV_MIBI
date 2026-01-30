@@ -1025,6 +1025,78 @@ celltype_log2c <-  cellprops$Data %>% group_by(EBV) %>%
 ggsave('Figure6.H.pdf', celltype_log2c, dpi = 320, width = 12, height = 6)
 ```
 
+### GSVA Exhaustion score among CD4 or CD8 cells
+
+```{r, warning=FALSE}
+# Exhaustion markers 
+markers <-list(c("CTLA4", "EOMES", "HAVCR2", "LAG3", "PDCD1", "TIGIT", "TOX", "PRF1"))
+names(markers) <- c("EXHAUSTION")
+
+library("BiocParallel")
+
+# Set the number of cores (use all but one)
+ncores <- max(1, parallel::detectCores() - 1)
+bp_param <- MulticoreParam(workers = ncores)
+
+
+# Add GSVA exhaustion score measured specifically among CD4 T cells
+# subset only CD4+
+soCD4 = subset(so, Cell.Type %like% "CD4")
+
+# Conversion to SingleCellExperiment format
+sce <- as.SingleCellExperiment(DietSeurat(soCD4))
+
+# Extract only LMP1 for the Expression column
+lmp1_expr <- data.frame(
+  Expression = as.matrix(assay(sce, "counts"))["LMP1", ],
+  row.names = colnames(sce)
+)
+soCD4@meta.data <- cbind(soCD4@meta.data, lmp1_expr)
+
+# GSVA score across the entire matrix in parallel
+expr_all <- as.matrix(assay(sce, "counts"))
+gsva_results <- GSVA::gsva(expr_all, markers, verbose = TRUE, BPPARAM = bp_param)
+gsva_results <- t(gsva_results)
+gc()
+
+# Update metadata with GSVA scores
+soCD4@meta.data[rownames(gsva_results), colnames(gsva_results)] <- gsva_results
+
+soCD4$EXHamongCD4=soCD4$EXHAUSTION
+soCD4$EXHAUSTION=NULL
+
+so=AddMetaData(so, metadata = soCD4@meta.data, col.name = "EXHamongCD4")
+
+# subset only CD8+
+soCD8 = subset(so, Cell.Type %like% "CD8")
+
+# Conversion to SingleCellExperiment format
+sce <- as.SingleCellExperiment(DietSeurat(soCD8))
+
+
+# Extract only LMP1 for the Expression column
+lmp1_expr <- data.frame(
+  Expression = as.matrix(assay(sce, "counts"))["LMP1", ],
+  row.names = colnames(sce)
+)
+soCD8@meta.data <- cbind(soCD8@meta.data, lmp1_expr)
+
+
+# GSVA score across the entire matrix in parallel
+expr_all <- as.matrix(assay(sce, "counts"))
+gsva_results <- GSVA::gsva(expr_all, markers, verbose = TRUE, BPPARAM = bp_param)
+gsva_results <- t(gsva_results)
+gc()
+
+# Update metadata with GSVA scores
+soCD8@meta.data[rownames(gsva_results), colnames(gsva_results)] <- gsva_results
+soCD8$EXHamongCD8=soCD8$EXHAUSTION
+soCD8$EXHAUSTION=NULL
+
+so=AddMetaData(so, metadata = soCD8@meta.data, col.name = "EXHamongCD8")
+```
+
+
 ### Figure 6I
 
 ```{r, warning=FALSE}
@@ -1044,6 +1116,104 @@ p = ggplot(soCD8@meta.data, aes(x=EBV, y=EXHamongCD8, fill=Tumor)) +
 p + stat_compare_means(method = "wilcox.test", method.args = list(alternative="greater"), label="p.signif") + xlab("") + ylab("GSVA Exhaustion Score") 
 
 ggsave("Figure6.I.CD8.pdf")
+```
+
+
+### GSVA Exhaustion score in EBV+
+```{r, eval=T}
+library(imcRtools)
+
+# subset only EBV+
+so = subset(so, EBV == "EBV+")
+
+# Conversion to SingleCellExperiment format
+sce <- as.SingleCellExperiment(DietSeurat(so))
+
+# Extract only LMP1 for the Expression column
+lmp1_expr <- data.frame(
+  Expression = as.matrix(assay(sce, "counts"))["LMP1", ],
+  row.names = colnames(sce)
+)
+so@meta.data <- cbind(so@meta.data, lmp1_expr)
+
+
+# add LMP1 pseudofov expression when higher or lower than mean
+so$LMP1fov_expr <- "Low"
+so$LMP1fov_expr[so$fov=="8_TMA_98.3"]<-"High"
+so$LMP1fov_expr[so$fov=="6_TMA_98.3"]<-"High"
+so$LMP1fov_expr[so$fov=="6_HTMA_528"]<-"High"
+so$LMP1fov_expr[so$fov=="5_HTMA_528"]<-"High"
+so$LMP1fov_expr[so$fov=="3_TMA_98.3"]<-"High"
+so$LMP1fov_expr[so$fov=="3_HTMA_528"]<-"High"
+so$LMP1fov_expr[so$fov=="25_TMA_98.3"]<-"High"
+so$LMP1fov_expr[so$fov=="22_TMA_98.3"]<-"High"
+so$LMP1fov_expr[so$fov=="20_HTMA_528"]<-"High"
+so$LMP1fov_expr[so$fov=="2_TMA_98.3"]<-"High"
+so$LMP1fov_expr[so$fov=="2_HTMA_528"]<-"High"
+so$LMP1fov_expr[so$fov=="19_HTMA_528"]<-"High"
+so$LMP1fov_expr[so$fov=="18_HTMA_528"]<-"High"
+
+
+# GSVA score across the entire matrix in parallel
+library(BiocParallel)
+
+# Set the number of cores (use all but one)
+ncores <- max(1, parallel::detectCores() - 1)
+bp_param <- MulticoreParam(workers = ncores)
+
+expr_all <- as.matrix(assay(sce, "counts"))
+
+gsva_results <- GSVA::gsva(expr_all, markers, verbose = TRUE, BPPARAM = bp_param)
+gsva_results <- t(gsva_results)
+gc()
+
+# Update metadata with GSVA scores
+so@meta.data[rownames(gsva_results), colnames(gsva_results)] <- gsva_results
+```
+
+
+### Calculate distance to tumor cell
+```{r, eval=T}
+library(imcRtools)
+
+soExpTum=subset(so@meta.data, Cell.Type=="Tumor")
+
+# Calculation of the 87th percentile threshold
+thr <- quantile(soExpTum$Expression, 0.87)
+
+# Direct identification of cell IDs with High/Low LMP1 expression
+TumLow  <- rownames(soExpTum[soExpTum$Expression <  thr, ])
+TumHigh <- rownames(soExpTum[soExpTum$Expression >= thr, ])
+
+# Add cell ID to metadata
+so@meta.data$cell_ID <- rownames(so@meta.data)
+
+# Helper function
+process_group <- function(so_obj, exclude_ids, label) {
+  sce <- as.SingleCellExperiment(DietSeurat(subset(so_obj, cell_ID %in% exclude_ids, invert = TRUE)))
+  EBV <- minDistToCells(
+    sce,
+    x_cells = sce$Cell.Type == "Tumor",
+    coords = c("centroid_x", "centroid_y"),
+    img_id = "fov"
+  )
+  seurat_obj <- as.Seurat(EBV, counts = "counts", data = NULL)
+  df <- seurat_obj@meta.data
+  df$LMP1expr_NearestTumorCell <- label
+  rm(sce, EBV, seurat_obj)
+  gc()
+  df
+}
+
+# Two-step processing calculating distance vs High and Low LMP1 tumor cells
+so@meta.data <- rbind(
+  process_group(so, TumLow,  "High"),
+  process_group(so, TumHigh, "Low")
+  ) 
+
+so@meta.data$distToTumorCell = so@meta.data$distToCells
+so@meta.data$distToCells = NULL
+so@meta.data=subset(so@meta.data, LMP1fov_expr == LMP1expr_NearestTumorCell)
 ```
 
 ### Figure 6K
